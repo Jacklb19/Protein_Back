@@ -1,0 +1,34 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Deployment and database tooling
+.vercel/
+supabase/.temp/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated results and models
+artifacts/
+tmp/
+*.pdb
+*.onnx
+
+# Logs and system files
+*.log
+.DS_Store
+Thumbs.db
+.idea/
