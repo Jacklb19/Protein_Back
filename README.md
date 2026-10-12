@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene la base de la API FastAPI, la migración Supabase y sus pruebas. Proyectos, proveedores externos y despliegue siguen pendientes.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Activación remota de persistencia y proveedores externos pendientes.
 
 ## Organización
 
@@ -14,7 +14,7 @@ Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No e
 
 ## Responsabilidad
 
-FastAPI gestiona identidad, autorización y, más adelante, proyectos, consultas UniProt y PDBe, interpretación y predicción estructural externa. Supabase proporciona Auth, PostgreSQL y Storage. La búsqueda de candidatos, descriptores y alineamiento permanecen en el navegador. Cada repositorio tiene su propio proyecto y URL de Vercel.
+FastAPI gestiona identidad, autorización, CRUD de proyectos y UniProt acotado. JWT de propietario, RLS y RPC SECURITY INVOKER. Interpretación/predicción/PDBe pendientes; Storage aún no integrado. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
 
 ## Desarrollo local
 
@@ -38,7 +38,7 @@ El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `V
 python -m unittest discover -s tests -v
 ```
 
-Cubre la auditoría estática de RLS y la API con un transporte simulado de Supabase: salud, CORS, token ausente o inválido, identidad resuelta, identidad sin configurar y fallos del proveedor convertidos en 502/504 sin filtrar detalles. No ejecuta migraciones ni prueba políticas contra PostgreSQL; la integración de base de datos local sigue pendiente. CI instala las dependencias fijadas y ejecuta la misma batería.
+Cubre auditoría estática, API y proyectos con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, los seis tests SQL se identifican como omitidos en unittest. CI ejecuta esa batería.
 
 ## Configuración
 
@@ -46,4 +46,6 @@ Cubre la auditoría estática de RLS y la API con un transporte simulado de Supa
 
 Antes del primer despliegue: verificar runtime Python/Vercel, configurar los orígenes del frontend, probar autorización y RLS con PostgreSQL local. El consentimiento de predicción debe advertir que se enviará la secuencia a un proveedor externo.
 
-Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). El servicio de predicción público es compartido; una prueba exitosa no garantiza su disponibilidad para la presentación.
+Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
+
+Próxima etapa: [laboratorio didáctico de diseño](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Primero un caso pequeño completo y medidas de recursos; después creación/modificación/comparación 3D. Sin ejecutor, pesos ni endpoints de diseño implementados. Push de dev autorizado con autoría exclusiva del propietario; no activa migraciones, merge ni servicios de pago.

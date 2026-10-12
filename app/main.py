@@ -15,6 +15,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import API_PREFIX, REQUEST_ID_HEADER, Settings, load_settings
 from .identity import CurrentIdentity
+from .projects import router as projects_router
+from .uniprot import router as uniprot_router
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
 
 API_TITLE = "ProteinForge API"
@@ -60,6 +62,8 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unexpected_exception_handler)
+    app.include_router(projects_router, prefix=API_PREFIX)
+    app.include_router(uniprot_router, prefix=API_PREFIX)
 
     @app.middleware("http")
     async def correlate(request: Request, call_next):
@@ -67,6 +71,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
         request.state.request_id = incoming if 0 < len(incoming) <= 64 else uuid.uuid4().hex
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request.state.request_id
+        response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get(f"{API_PREFIX}/health", response_model=Health, tags=["service"])

@@ -2,18 +2,18 @@
 
 ## Estado
 
-Base de API implementada en `app/`: fábrica `create_app`, configuración por variables de entorno, CORS a orígenes configurados, identificador de correlación, errores RFC 9457, `GET /v1/health` y `GET /v1/me` validando el token contra Supabase Auth. Migración inicial y auditoría estática de RLS conservadas. Proyectos, proveedores externos y despliegue aún pendientes. La definición general está en el repositorio frontend, en `docs/definicion-proyecto.md`; no mantener una segunda copia que pueda divergir.
+API local: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problemas RFC 9457. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Nueva migración transacciones/versiones/grants/índices sin nuevas tablas. RLS/concurrencia PostgreSQL 18 comprobados; migración/publicación y sesión Supabase real pendientes. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md).
 
 ## Responsabilidades
 
 - FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
-- Proveedores externos: UniProt y PDBe/SIFTS para anotación/mapeo, Groq para interpretación y ESM Atlas/ESMFold para predicción de un candidato seleccionado.
-- Cliente React independiente: cálculo científico, futura generación guiada, visualización y PDF/CSV. El backend no implementa algoritmos del navegador.
+- Proveedores externos: UniProt/PDBe/SIFTS para anotación/mapeo e interpretación pendiente. Próxima cadena de diseño/predicción tras probar Foundry o RFdiffusion/MPNN/ColabFold. ESM Atlas/ESMFold pasa a alternativa histórica.
+- Cliente React independiente: cálculo científico/generación guiada/visualización/informes locales. Backend no implementa algoritmos del navegador.
 
 ## Datos existentes
 
-La migración inicial conserva `profiles`, `projects`, `analyses`, `alignments`, `external_cache`, sus RLS, índices, trigger y UUIDv7 provisional. La API futura generará UUIDv7 con Python 3.14 para entidades propias; `profiles.id` coincide con Supabase Auth. No modificar la migración inicial como si fuera la configuración remota vigente; cambios de esquema posteriores van en migraciones nuevas.
+Se conservan profiles/projects/analyses/alignments/external_cache. Migración posterior reemplaza helper UUIDv7 provisional con timestamp/bits/gen_random_uuid SQL, sin exigir Python 3.14 local; profiles.id coincide con Auth. Snapshot workspace-v1 en analyses incluye fuente opcional exacta y resultados asociados. Cambios en migraciones nuevas; no modifican por sí solos la base remota.
 
 Guardar candidatos, parámetros de búsqueda, consentimiento y predicciones necesita diseño adicional. No hay tablas, campos o endpoints nuevos aprobados para esas capacidades todavía.
 
@@ -23,14 +23,16 @@ Secretos solo en variables del servidor. JWT y autorización por recurso; CORS a
 
 La predicción envía secuencia completa tras consentimiento. El asistente recibe solo descriptores/anotación/parámetros. Retención, cuotas y términos se verifican al integrar cada proveedor. No registrar secuencias privadas o secretos en logs.
 
-Concurrencia optimista para actualización de proyectos: fecha conocida y conflicto 409. PDF generado en navegador, subida por URL firmada y registro vía API. Los archivos grandes no deben atravesar funciones que excedan sus límites; consultar documentación oficial al implementar.
+Concurrencia optimista PUT/DELETE: timestamp con microsegundos, bloqueo y conflicto 409. PDF local implementado en frontend; subida por URL firmada/registro todavía previstos, sin endpoints activos. Consultar límites al integrar archivos/proveedores.
 
 ## Despliegue y operación
 
-Vercel independiente del frontend, Supabase Free y costo cero sin tarjeta. Sin GPU local permanente. La predicción la ejecuta un proveedor externo; caché y errores mantienen la aplicación usable si ese proveedor no responde. El resultado guardado de respaldo debe identificarse como tal.
+Vercel independiente, Supabase Free y costo cero sin tarjeta. Próximo alcance: dos o tres diseños computacionales para demo, sin GPU permanente ni entrenamiento propio. Probar Colab interactivo o equipo local separado de FastAPI; automatización posterior con ejecutor/cola si se acuerda, sin nuevos endpoints/migraciones todavía. No alojar pesos en la función Vercel; identificar resultados de respaldo como tales.
 
-El usuario autoriza cambios remotos y publicación. `main` es versión verificada; desarrollo en `dev`. Configuración FastAPI/Vercel, URLs efectivas y versiones exactas de dependencias quedan para la tarea de base API.
+Acuerdo de producto/modelos/hardware/alojamiento y precios en el [laboratorio del frontend](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Railway coordina tareas pero no ofrece GPU; Render publica CPU/RAM sin GPU cotizada para este caso. Precios consultados no autorizan gasto ni acreditan rendimiento.
+
+La petición posterior autoriza push de dev de ambos repositorios solo con autoría exclusiva del propietario, sin coautores. main conserva versión estable; sin merge, contratación ni migraciones autorizadas. Activar persistencia y verificar sesión real sigue pendiente.
 
 ## Pruebas
 
-`python -m unittest discover -s tests -v`: auditoría estática de RLS y pruebas de la API con un transporte simulado de Supabase (`tests/test_api.py`): salud, CORS, token ausente/ inválido, identidad resuelta, identidad sin configurar y fallos del proveedor convertidos en 502/504 sin filtrar detalles. No prueba semántica SQL ni políticas reales; probar con PostgreSQL local antes de declarar seguridad de datos verificada.
+unittest: 26 pruebas HTTP/contratos/RLS estático pasan con transporte simulado; seis SQL omitidas sin base configurada. scripts/test-postgres.ps1 ejecutó las seis con PostgreSQL 18 temporal real y Auth.uid emulado: propietario/anónimo/transferencia/cascada/rollback/concurrencia. No certifica JWT/PostgREST remoto. Entorno local Python 3.13; objetivo 3.14 aún sin ejecutar. Adaptador UniProt probado adicionalmente con datos públicos reales, sin credenciales.
