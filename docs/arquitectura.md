@@ -2,11 +2,11 @@
 
 ## Estado
 
-Repositorio preparado, migración inicial trasladada desde el frontend y auditoría estática de RLS. API, autenticación, proveedores y despliegue aún pendientes. La definición general está en el repositorio frontend, en `docs/definicion-proyecto.md`; no mantener una segunda copia que pueda divergir.
+Base de API implementada en `app/`: fábrica `create_app`, configuración por variables de entorno, CORS a orígenes configurados, identificador de correlación, errores RFC 9457, `GET /v1/health` y `GET /v1/me` validando el token contra Supabase Auth. Migración inicial y auditoría estática de RLS conservadas. Proyectos, proveedores externos y despliegue aún pendientes. La definición general está en el repositorio frontend, en `docs/definicion-proyecto.md`; no mantener una segunda copia que pueda divergir.
 
 ## Responsabilidades
 
-- FastAPI/Python 3.14 previsto: validar entradas, identidad JWT y propiedad de recursos; responder JSON/OpenAPI según contratos implementados.
+- FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
 - Proveedores externos: UniProt y PDBe/SIFTS para anotación/mapeo, Groq para interpretación y ESM Atlas/ESMFold para predicción de un candidato seleccionado.
 - Cliente React independiente: cálculo científico, futura generación guiada, visualización y PDF/CSV. El backend no implementa algoritmos del navegador.
@@ -33,4 +33,4 @@ El usuario autoriza cambios remotos y publicación. `main` es versión verificad
 
 ## Pruebas
 
-`python -m unittest discover -s tests -v`: auditoría estática de RLS heredada. No prueba semántica SQL ni autorización real. Al implementar la API, añadir casos de identidad/propiedad, entradas y errores; probar políticas con PostgreSQL local antes de declarar seguridad de datos verificada.
+`python -m unittest discover -s tests -v`: auditoría estática de RLS y pruebas de la API con un transporte simulado de Supabase (`tests/test_api.py`): salud, CORS, token ausente/ inválido, identidad resuelta, identidad sin configurar y fallos del proveedor convertidos en 502/504 sin filtrar detalles. No prueba semántica SQL ni políticas reales; probar con PostgreSQL local antes de declarar seguridad de datos verificada.
