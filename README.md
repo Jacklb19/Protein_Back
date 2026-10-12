@@ -18,7 +18,9 @@ FastAPI gestiona identidad, autorización y, más adelante, proyectos, consultas
 
 ## Desarrollo local
 
-Dependencias fijadas en `requirements.txt` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1). Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
+Dependencias fijadas en `requirements.txt` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4). Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
+
+Para Vercel, `.python-version` fija 3.14 y la detección FastAPI usa `app/main.py:app`. Configurar `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `ALLOWED_ORIGINS` en las variables del proyecto. Build/instalación/salida del framework sin overrides; no iniciar Uvicorn como comando de build. Ver [FastAPI](https://vercel.com/docs/frameworks/backend/fastapi) y [Python](https://vercel.com/docs/functions/runtimes/python/python-version). Este ajuste no verifica un despliegue remoto.
 
 ```bash
 python -m venv .venv
@@ -26,7 +28,7 @@ python -m venv .venv
 .venv/Scripts/python -m uvicorn app.main:app --reload
 ```
 
-`GET /v1/health` responde sin configuración. `GET /v1/me` requiere `SUPABASE_URL` y `SUPABASE_ANON_KEY` en el entorno del proceso y un token Bearer de Supabase Auth; sin configuración devuelve 503. El arranque anterior no carga `.env` automáticamente: ese archivo es un almacenamiento local de configuración, no una garantía de que las variables estén activas. Exportarlas en el entorno antes de iniciar Uvicorn. CORS se limita a `ALLOWED_ORIGINS`.
+`GET /v1/health` responde sin configuración. `GET /v1/me` requiere `SUPABASE_URL`, `SUPABASE_ANON_KEY` y un token Bearer de Supabase Auth; sin configuración devuelve 503. La aplicación carga automáticamente el `.env` de la raíz de este repositorio. Las variables del proceso tienen prioridad; no se modifica el entorno ni se buscan archivos en carpetas superiores. La configuración explícita de pruebas no lee archivos locales. CORS se limita a `ALLOWED_ORIGINS`.
 
 El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `VITE_API_BASE_URL`. Configurar en `ALLOWED_ORIGINS` el origen exacto usado en el navegador, incluido el puerto (`localhost` y `127.0.0.1` son orígenes diferentes). No crear proyectos ni aplicar migraciones como parte de esa comprobación.
 

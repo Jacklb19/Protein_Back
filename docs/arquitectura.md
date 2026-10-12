@@ -6,7 +6,7 @@ Base de API implementada en `app/`: fábrica `create_app`, configuración por va
 
 ## Responsabilidades
 
-- FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
+- FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
 - Proveedores externos: UniProt y PDBe/SIFTS para anotación/mapeo, Groq para interpretación y ESM Atlas/ESMFold para predicción de un candidato seleccionado.
 - Cliente React independiente: cálculo científico, futura generación guiada, visualización y PDF/CSV. El backend no implementa algoritmos del navegador.

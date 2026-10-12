@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import dotenv_values
 
 API_PREFIX = "/v1"
 SUPABASE_AUTH_PATH = "/auth/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
 DEFAULT_IDENTITY_TIMEOUT_SECONDS = 5.0
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 @dataclass(frozen=True)
@@ -34,8 +38,11 @@ def _origins(raw: str) -> tuple[str, ...]:
 
 
 def load_settings(environment: dict[str, str] | None = None) -> Settings:
-    """Builds settings from the process environment or an explicit mapping (tests)."""
-    env = os.environ if environment is None else environment
+    """Read this repository's .env, with process overrides; explicit mappings stay isolated."""
+    env = environment if environment is not None else {
+        **{key: value for key, value in dotenv_values(ENV_FILE).items() if value is not None},
+        **os.environ,
+    }
     origins = _origins(env.get("ALLOWED_ORIGINS", "")) or _origins(env.get("FRONTEND_ORIGIN", ""))
     timeout = env.get("IDENTITY_TIMEOUT_SECONDS", "")
     return Settings(
