@@ -4,6 +4,8 @@ Actualizado el 12 de octubre de 2026. OpenAPI generado por FastAPI (`/docs` y `/
 
 ## Implementado
 
+También implementados GET /v1/uniprot/search y GET /v1/uniprot/{accession}; ver [contrato y evidencia](uniprot.md). workspace.source opcional conserva procedencia ligada a la secuencia exacta.
+
 | Método y ruta | Propósito | Autenticación |
 |---|---|---|
 | GET /v1/health | Estado del proceso, versión y si la identidad está configurada | Pública |
@@ -26,8 +28,6 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 
 | Método y ruta | Propósito | Autenticación prevista |
 |---|---|---|
-| GET /v1/uniprot/search | Búsqueda por texto o identificador | Requerida |
-| GET /v1/uniprot/{acc} | Anotación de una entrada | Requerida |
 | POST /v1/assistant/interpret | Interpretar contexto ya calculado | Requerida |
 | POST /v1/reports | Registrar informe generado en cliente | Requerida |
 

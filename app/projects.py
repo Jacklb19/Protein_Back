@@ -97,9 +97,26 @@ class AlignmentSnapshot(Contract):
         return self
 
 
+class SequenceSource(Contract):
+    origin: Literal["catalog", "uniprot"]
+    accession: str = Field(pattern=r"^[A-Z0-9]{6,10}$")
+    sequence: Sequence
+    entry_version: int | None = Field(default=None, gt=0)
+    sequence_version: int | None = Field(default=None, gt=0)
+    retrieved_at: str | None = Field(default=None, max_length=64)
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def require_source_timestamp(cls, value: str | None) -> str | None:
+        if value is not None and datetime.fromisoformat(value).tzinfo is None:
+            raise ValueError("Timezone required")
+        return value
+
+
 class Workspace(Contract):
     schema_version: Literal[1] = 1
     profile_window: Literal[9, 19] = 9
+    source: SequenceSource | None = None
     descriptors: DescriptorSnapshot | None = None
     alignment: AlignmentSnapshot = Field(default_factory=AlignmentSnapshot)
 
@@ -120,6 +137,8 @@ class ProjectWrite(Contract):
     @model_validator(mode="after")
     def validate_descriptors(self):
         snapshot = self.workspace.descriptors
+        if self.workspace.source and self.workspace.source.sequence != self.active_sequence:
+            raise ValueError("Stale source")
         if snapshot:
             excluded = sum(residue in "UOBZX" for residue in self.active_sequence)
             if snapshot.sequence != self.active_sequence or snapshot.excluded != excluded or snapshot.result.length != len(self.active_sequence) - excluded:

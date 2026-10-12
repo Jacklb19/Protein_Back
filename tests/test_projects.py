@@ -12,7 +12,7 @@ from app.main import create_app
 USER = "00000000-0000-4000-8000-000000000001"
 PROJECT = "00000000-0000-4000-8000-000000000010"
 DATE = "2026-10-12T08:00:00.123456+00:00"
-WORKSPACE = {"schemaVersion": 1, "profileWindow": 9, "descriptors": None, "alignment": {"first": "ACD", "second": "ACD", "matrix": "BLOSUM62", "mode": "global", "result": None}}
+WORKSPACE = {"schemaVersion": 1, "profileWindow": 9, "source": None, "descriptors": None, "alignment": {"first": "ACD", "second": "ACD", "matrix": "BLOSUM62", "mode": "global", "result": None}}
 WRITE = {"name": "Insulin study", "activeSequence": "ACD", "workspace": WORKSPACE}
 DOCUMENT = {**WRITE, "id": PROJECT, "status": "draft", "createdAt": DATE, "updatedAt": DATE}
 SETTINGS = Settings(supabase_url="https://project.supabase.co", supabase_anon_key="public-key")
@@ -20,6 +20,15 @@ HEADERS = {"Authorization": "Bearer user-token"}
 
 
 class ProjectTests(unittest.TestCase):
+    def test_source_is_exact_versioned_and_timezone_aware(self):
+        from app.projects import ProjectWrite
+        source = {"origin": "uniprot", "accession": "P01308", "sequence": "ACD", "entryVersion": 284, "sequenceVersion": 1, "retrievedAt": DATE}
+        payload = {**WRITE, "workspace": {**WORKSPACE, "source": source}}
+        self.assertEqual(ProjectWrite.model_validate(payload).workspace.source.sequence, "ACD")
+        for changes in [{"sequence": "ACE"}, {"sequenceVersion": 0}, {"retrievedAt": "2026-10-12T08:00:00"}, {"retrievedAt": "invalid"}]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                ProjectWrite.model_validate({**payload, "workspace": {**WORKSPACE, "source": {**source, **changes}}})
+
     def client(self, data_handler):
         def handler(request):
             self.assertEqual(request.headers["Authorization"], "Bearer user-token")
