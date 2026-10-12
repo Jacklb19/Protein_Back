@@ -36,3 +36,5 @@ Comprobado: PostgreSQL 18.0 y Python 3.13, RLS entre propietarios/falsificación
 5. Recargar: secuencia/ventana/comparación restauradas, propiedades recalculadas en Worker. Sin red: cálculo/CSV locales, guardado con error explícito.
 
 No se promete disponibilidad remota, secuencias offline ni sincronización automática.
+
+Lectura pública expresamente autorizada el 12 oct, 18:20 UTC: las cinco tablas previstas continúan devolviendo 404/PGRST205. Google/correo y registro habilitados; confirmación requerida. No se verificó SMTP, sesión real ni configuración privada. [Resultado y alcance](supabase-public-status.md). No se aplicaron migraciones.
