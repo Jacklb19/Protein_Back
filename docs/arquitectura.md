@@ -2,7 +2,7 @@
 
 ## Estado
 
-Base de API implementada en `app/`: fábrica `create_app`, configuración por variables de entorno, CORS a orígenes configurados, identificador de correlación, errores RFC 9457, `GET /v1/health` y `GET /v1/me` validando el token contra Supabase Auth. Migración inicial y auditoría estática de RLS conservadas. Proyectos, proveedores externos y despliegue aún pendientes. La definición general está en el repositorio frontend, en `docs/definicion-proyecto.md`; no mantener una segunda copia que pueda divergir.
+API local en app: health/me y CRUD de proyectos, identidad Supabase, CORS limitado, correlación y problemas RFC 9457. Persistencia mediante JWT de usuario y RPC SECURITY INVOKER sobre projects/analyses; nueva migración de transacciones/versiones/grants/índices sin nuevas tablas. RLS/concurrencia en PostgreSQL 18 temporal comprobados. Activación remota y publicación pendientes. Ver [contratos](api.md) y [persistencia](project-persistence.md). Definición general en frontend.
 
 ## Responsabilidades
 
@@ -29,7 +29,7 @@ Concurrencia optimista para actualización de proyectos: fecha conocida y confli
 
 Vercel independiente del frontend, Supabase Free y costo cero sin tarjeta. Sin GPU local permanente. La predicción la ejecuta un proveedor externo; caché y errores mantienen la aplicación usable si ese proveedor no responde. El resultado guardado de respaldo debe identificarse como tal.
 
-El usuario autoriza cambios remotos y publicación. `main` es versión verificada; desarrollo en `dev`. Configuración FastAPI/Vercel, URLs efectivas y versiones exactas de dependencias quedan para la tarea de base API.
+La entrega autónoma actual no autoriza cambios remotos ni publicación. main conserva versión estable; commits locales en dev. Configuración FastAPI/Vercel existente; activar migraciones y verificar sesión real requiere acción posterior del usuario.
 
 ## Pruebas
 

@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene la base de la API FastAPI, la migración Supabase y sus pruebas. Proyectos, proveedores externos y despliegue siguen pendientes.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Activación remota de persistencia y proveedores externos pendientes.
 
 ## Organización
 
@@ -38,7 +38,7 @@ El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `V
 python -m unittest discover -s tests -v
 ```
 
-Cubre la auditoría estática de RLS y la API con un transporte simulado de Supabase: salud, CORS, token ausente o inválido, identidad resuelta, identidad sin configurar y fallos del proveedor convertidos en 502/504 sin filtrar detalles. No ejecuta migraciones ni prueba políticas contra PostgreSQL; la integración de base de datos local sigue pendiente. CI instala las dependencias fijadas y ejecuta la misma batería.
+Cubre auditoría estática, API y proyectos con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, los seis tests SQL se identifican como omitidos en unittest. CI ejecuta esa batería.
 
 ## Configuración
 
