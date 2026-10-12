@@ -14,7 +14,7 @@ Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No e
 
 ## Responsabilidad
 
-FastAPI gestiona identidad, autorización y, más adelante, proyectos, consultas UniProt y PDBe, interpretación y predicción estructural externa. Supabase proporciona Auth, PostgreSQL y Storage. La búsqueda de candidatos, descriptores y alineamiento permanecen en el navegador. Cada repositorio tiene su propio proyecto y URL de Vercel.
+FastAPI gestiona identidad, autorización, CRUD de proyectos y UniProt acotado. JWT de propietario, RLS y RPC SECURITY INVOKER. Interpretación/predicción/PDBe pendientes; Storage aún no integrado. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
 
 ## Desarrollo local
 
