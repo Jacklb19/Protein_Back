@@ -46,4 +46,6 @@ Cubre auditoría estática, API y proyectos con transporte simulado. `./scripts/
 
 Antes del primer despliegue: verificar runtime Python/Vercel, configurar los orígenes del frontend, probar autorización y RLS con PostgreSQL local. El consentimiento de predicción debe advertir que se enviará la secuencia a un proveedor externo.
 
-Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). El servicio de predicción público es compartido; una prueba exitosa no garantiza su disponibilidad para la presentación.
+Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
+
+Próxima etapa: [laboratorio didáctico de diseño](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Primero un caso pequeño completo y medidas de recursos; después creación/modificación/comparación 3D. Sin ejecutor, pesos ni endpoints de diseño implementados. Push de dev autorizado con autoría exclusiva del propietario; no activa migraciones, merge ni servicios de pago.
