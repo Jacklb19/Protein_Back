@@ -35,6 +35,30 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 
 El cliente obtiene la URL de la API mediante `VITE_API_BASE_URL`. No emitir datos de otro propietario ni usar el consentimiento del asistente como autorización para enviar secuencias a predicción.
 
-## gRPC (propuesto, sin implementar)
+## gRPC
 
-Contratos Protocol Buffers en `proto/proteinforge/`: `AccountService`, `ProjectService` y `ReferenceService` equivalen a las rutas REST de arriba; `DesignService` (`v1alpha1`) es el borrador del laboratorio de diseño. `buf.yaml` define lint STANDARD y comprobación de cambios incompatibles. Evaluación, protocolo para navegador (Connect o gRPC-Web), restricciones de Vercel, dependencias pendientes de aprobación y plan por fases en `../frontend/docs/grpc.md`. Ningún servicio RPC se sirve todavía.
+Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectService` y `ReferenceService` están servidos y reutilizan las mismas funciones de dominio, validación Pydantic y autorización que las rutas REST, que siguen activas. `DesignService` (`v1alpha1`) es un borrador sin implementar.
+
+| Servicio | Métodos | Equivale a |
+| --- | --- | --- |
+| `proteinforge.account.v1.AccountService` | `GetStatus`, `GetMe` | `GET /v1/health`, `GET /v1/me` |
+| `proteinforge.project.v1.ProjectService` | `ListProjects`, `GetProject`, `CreateProject`, `UpdateProject`, `DeleteProject` | `/v1/projects` |
+| `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
+
+Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nativos no admiten prefijo). Cada servicio responde a tres protocolos según el `Content-Type`:
+
+- **gRPC-Web** (`application/grpc-web+proto`): el que usa el navegador. Funciona sobre HTTP/1.1.
+- **Connect** (`application/json` o `application/proto`): útil para depurar con `curl`.
+- **gRPC nativo** (`application/grpc`): requiere HTTP/2 y trailers ASGI. Uvicorn no los ofrece; Hypercorn sí (`requirements-dev.txt`). En Vercel no se espera gRPC nativo; queda para el ejecutor del laboratorio de diseño.
+
+El token se envía en `Authorization: Bearer` igual que en REST. Errores: 401→`UNAUTHENTICATED`, 403→`PERMISSION_DENIED`, 404→`NOT_FOUND`, 409→`ABORTED`, 400/422→`INVALID_ARGUMENT` (`validation: <campos>`, sin valores enviados), 429→`RESOURCE_EXHAUSTED`, 502/503→`UNAVAILABLE`, 504→`DEADLINE_EXCEEDED`, esquema o identidad sin configurar→`FAILED_PRECONDITION`, otro→`INTERNAL` (`internal`). El mensaje es siempre un código estable. Paginación con `page_token` opaco; un token no emitido por el servidor da `INVALID_ARGUMENT`. Mensajes de hasta 2 MB. CORS expone `Grpc-Status`, `Grpc-Message` y admite las cabeceras de Connect y gRPC-Web. Todas las respuestas llevan `X-Request-Id` y `Cache-Control: no-store`.
+
+Código generado en `app/rpc/gen/` (versionado; no editar). Regenerar tras cambiar un `.proto`:
+
+```bash
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+PATH="$PWD/.venv/Scripts:$PATH" npx --yes @bufbuild/buf@1.73.0 lint
+PATH="$PWD/.venv/Scripts:$PATH" npx --yes @bufbuild/buf@1.73.0 generate
+```
+
+Prueba de los tres protocolos contra un servidor en marcha: `PYTHONPATH=. .venv/Scripts/python scripts/rpc_smoke.py http://127.0.0.1:8000` (con Hypercorn para incluir gRPC nativo). Evaluación y decisiones: [docs/grpc.md del frontend](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/grpc.md).
