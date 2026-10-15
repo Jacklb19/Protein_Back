@@ -1,0 +1,154 @@
+syntax = "proto3";
+
+package proteinforge.design.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
+// (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+// real run (shape -> sequence -> prediction) measures what the chosen tools produce;
+// v1alpha1 signals that no compatibility is promised yet.
+//
+// Two hops share this contract:
+// - API <-> design executor (GPU machine or notebook): native gRPC over HTTP/2.
+// - Browser <-> API: Connect or gRPC-Web, where server streaming is available but client
+//   and bidirectional streaming are not.
+//
+// A designed sequence, a predicted structure and a demonstrated function are different
+// results; nothing in these messages claims biological activity.
+service DesignService {
+  // Queues a design. Requires explicit consent because the sequence leaves the browser.
+  // FAILED_PRECONDITION without consent; RESOURCE_EXHAUSTED when the executor is busy.
+  rpc StartDesign(StartDesignRequest) returns (StartDesignResponse);
+
+  // Streams the job each time it changes, ending when it completes, fails or is cancelled.
+  rpc WatchDesign(WatchDesignRequest) returns (stream WatchDesignResponse);
+
+  // Current state of a job, for clients that cannot keep a stream open.
+  rpc GetDesign(GetDesignRequest) returns (GetDesignResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Requests cancellation; the job ends in DESIGN_STAGE_CANCELLED.
+  rpc CancelDesign(CancelDesignRequest) returns (CancelDesignResponse);
+}
+
+enum DesignMode {
+  DESIGN_MODE_UNSPECIFIED = 0;
+  // Change a known protein while keeping protected positions.
+  DESIGN_MODE_MODIFY_REFERENCE = 1;
+  // Generate a new backbone of a given length, then a sequence for it.
+  DESIGN_MODE_NEW_BACKBONE = 2;
+}
+
+message DesignSpec {
+  DesignMode mode = 1;
+  // Starting sequence for DESIGN_MODE_MODIFY_REFERENCE.
+  string reference_sequence = 2;
+  // One-based positions that must keep their residue.
+  repeated int32 protected_positions = 3;
+  // Target length for DESIGN_MODE_NEW_BACKBONE.
+  int32 length = 4;
+  // Candidates requested; small by design (a demonstration needs two or three).
+  int32 candidate_count = 5;
+  // Reproducibility seed.
+  uint32 seed = 6;
+}
+
+enum DesignStage {
+  DESIGN_STAGE_UNSPECIFIED = 0;
+  DESIGN_STAGE_QUEUED = 1;
+  DESIGN_STAGE_BACKBONE = 2;
+  DESIGN_STAGE_SEQUENCE = 3;
+  DESIGN_STAGE_PREDICTION = 4;
+  DESIGN_STAGE_COMPLETED = 5;
+  DESIGN_STAGE_FAILED = 6;
+  DESIGN_STAGE_CANCELLED = 7;
+}
+
+message DesignProgress {
+  DesignStage stage = 1;
+  // 0–1 within the whole job, as reported by the executor.
+  double fraction = 2;
+}
+
+message StructureFile {
+  StructureFormat format = 1;
+  bytes content = 2;
+}
+
+enum StructureFormat {
+  STRUCTURE_FORMAT_UNSPECIFIED = 0;
+  STRUCTURE_FORMAT_PDB = 1;
+  STRUCTURE_FORMAT_MMCIF = 2;
+  STRUCTURE_FORMAT_BCIF = 3;
+}
+
+message DesignCandidate {
+  string sequence = 1;
+  // Backbone produced by the design step, when the mode creates one.
+  StructureFile designed_backbone = 2;
+  // Structure predicted for exactly `sequence`.
+  StructureFile predicted_structure = 3;
+  // Predictor confidence per residue (pLDDT, 0–100). Confidence in the model, not in function.
+  repeated float residue_confidence = 4;
+  // Agreement between designed and predicted backbones, in ångström, when both exist.
+  optional double backbone_rmsd_angstrom = 5;
+}
+
+message ToolVersion {
+  // For example "ProteinMPNN".
+  string name = 1;
+  string version = 2;
+  // Weights file or checkpoint identifier.
+  string weights = 3;
+}
+
+message Provenance {
+  repeated ToolVersion tools = 1;
+  uint32 seed = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp finish_time = 4;
+}
+
+message DesignJob {
+  string id = 1;
+  DesignSpec spec = 2;
+  DesignProgress progress = 3;
+  repeated DesignCandidate candidates = 4;
+  Provenance provenance = 5;
+}
+
+message StartDesignRequest {
+  DesignSpec spec = 1;
+  // Must be true: the person accepted that the sequence is sent to the executor.
+  bool consent_to_send_sequence = 2;
+}
+
+message StartDesignResponse {
+  DesignJob job = 1;
+}
+
+message WatchDesignRequest {
+  string id = 1;
+}
+
+message WatchDesignResponse {
+  DesignJob job = 1;
+}
+
+message GetDesignRequest {
+  string id = 1;
+}
+
+message GetDesignResponse {
+  DesignJob job = 1;
+}
+
+message CancelDesignRequest {
+  string id = 1;
+}
+
+message CancelDesignResponse {
+  DesignJob job = 1;
+}

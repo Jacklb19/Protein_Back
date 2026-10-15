@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package proteinforge.reference.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Public UniProt annotations through the API. Only the text query or accession is sent
+// to UniProt; the caller's token never leaves the API and no editor sequence is sent.
+// Requires a valid bearer token (UNAUTHENTICATED otherwise).
+//
+// Error codes: INVALID_ARGUMENT (query syntax or accession format), NOT_FOUND (unknown entry),
+// UNAVAILABLE / DEADLINE_EXCEEDED (UniProt limited or unreachable).
+// Equivalent REST routes: GET /v1/uniprot/search and GET /v1/uniprot/{accession}.
+service ReferenceService {
+  // At most ten summaries, reviewed entries first as UniProt orders them.
+  rpc SearchEntries(SearchEntriesRequest) returns (SearchEntriesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  rpc GetEntry(GetEntryRequest) returns (GetEntryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message EntrySummary {
+  // UniProt accession.
+  string accession = 1;
+  string name = 2;
+  string organism = 3;
+  // Swiss-Prot (true) or TrEMBL (false).
+  bool reviewed = 4;
+  // Residues; 1–100,000.
+  int32 length = 5;
+}
+
+// Experimental structure cross-referenced by the entry.
+message PdbReference {
+  // PDB id, for example "1TRZ".
+  string id = 1;
+  // As annotated, for example "X-ray".
+  string method = 2;
+  optional string resolution = 3;
+  // Chain ranges, for example "A/C=90-110, B/D=25-54".
+  optional string chains = 4;
+}
+
+message Entry {
+  EntrySummary summary = 1;
+  string sequence = 2;
+  int32 entry_version = 3;
+  int32 sequence_version = 4;
+  google.protobuf.Timestamp retrieve_time = 5;
+  // Functional annotation in the source language; absent when UniProt has none.
+  optional string function = 6;
+  repeated PdbReference structures = 7;
+}
+
+message SearchEntriesRequest {
+  // 2–200 characters of UniProt query syntax, for example "accession:P01308".
+  string query = 1;
+}
+
+message SearchEntriesResponse {
+  repeated EntrySummary entries = 1;
+  // Maximum returned per search.
+  int32 limit = 2;
+  // True when UniProt had more matches than `limit`.
+  bool truncated = 3;
+  google.protobuf.Timestamp retrieve_time = 4;
+}
+
+message GetEntryRequest {
+  string accession = 1;
+}
+
+message GetEntryResponse {
+  Entry entry = 1;
+}

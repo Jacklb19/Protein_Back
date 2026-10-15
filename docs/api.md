@@ -34,3 +34,7 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 `GET /v1/pdb/{id}/structure` y `GET /v1/catalog/domains` dejan de ser rutas necesarias: BinaryCIF público se descarga de RCSB y el catálogo se sirve como JSON estático. RF-17/RF-18 no tienen rutas hasta acordar persistencia de candidatos, consentimiento, validación de PDB y procedencia.
 
 El cliente obtiene la URL de la API mediante `VITE_API_BASE_URL`. No emitir datos de otro propietario ni usar el consentimiento del asistente como autorización para enviar secuencias a predicción.
+
+## gRPC (propuesto, sin implementar)
+
+Contratos Protocol Buffers en `proto/proteinforge/`: `AccountService`, `ProjectService` y `ReferenceService` equivalen a las rutas REST de arriba; `DesignService` (`v1alpha1`) es el borrador del laboratorio de diseño. `buf.yaml` define lint STANDARD y comprobación de cambios incompatibles. Evaluación, protocolo para navegador (Connect o gRPC-Web), restricciones de Vercel, dependencias pendientes de aprobación y plan por fases en `../frontend/docs/grpc.md`. Ningún servicio RPC se sirve todavía.

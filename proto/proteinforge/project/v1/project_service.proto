@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package proteinforge.project.v1;
+
+import "google/protobuf/timestamp.proto";
+import "proteinforge/project/v1/workspace.proto";
+
+// Projects owned by the person behind the bearer token. Supabase receives the user's own
+// token, so PostgreSQL row-level security decides ownership; another owner's project is
+// indistinguishable from a missing one (NOT_FOUND).
+//
+// Writes use optimistic concurrency: updates and deletes send the update_time they last saw
+// and fail with ABORTED when the project changed meanwhile.
+//
+// Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
+// snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
+// ABORTED (concurrent change), FAILED_PRECONDITION (persistence schema not available on this
+// server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
+// Equivalent REST routes: /v1/projects.
+service ProjectService {
+  // Most recently updated first; summaries carry no sequences.
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Creates the project and its snapshot in one transaction.
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+
+  // Replaces name, active sequence and workspace; also used to rename.
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+
+  // Deletes the project and its stored results.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+}
+
+message ProjectSummary {
+  // UUID.
+  string id = 1;
+  // 1–120 characters, trimmed, no control characters.
+  string name = 2;
+  ProjectStatus status = 3;
+  google.protobuf.Timestamp create_time = 4;
+  google.protobuf.Timestamp update_time = 5;
+}
+
+message Project {
+  ProjectSummary summary = 1;
+  // Up to 100,000 residues.
+  string active_sequence = 2;
+  Workspace workspace = 3;
+}
+
+enum ProjectStatus {
+  PROJECT_STATUS_UNSPECIFIED = 0;
+  PROJECT_STATUS_DRAFT = 1;
+}
+
+message ListProjectsRequest {
+  // 1–100; 0 means the server default of 30.
+  int32 page_size = 1;
+  // Opaque token from a previous response; empty for the first page.
+  string page_token = 2;
+}
+
+message ListProjectsResponse {
+  repeated ProjectSummary projects = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message GetProjectRequest {
+  string id = 1;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  string active_sequence = 2;
+  Workspace workspace = 3;
+}
+
+message CreateProjectResponse {
+  Project project = 1;
+}
+
+message UpdateProjectRequest {
+  string id = 1;
+  // The update_time the client last read; ABORTED when it no longer matches.
+  google.protobuf.Timestamp expected_update_time = 2;
+  string name = 3;
+  string active_sequence = 4;
+  Workspace workspace = 5;
+}
+
+message UpdateProjectResponse {
+  Project project = 1;
+}
+
+message DeleteProjectRequest {
+  string id = 1;
+  google.protobuf.Timestamp expected_update_time = 2;
+}
+
+message DeleteProjectResponse {}
