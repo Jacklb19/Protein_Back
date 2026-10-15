@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .config import API_PREFIX, REQUEST_ID_HEADER, Settings, load_settings
+from .config import API_PREFIX, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
+from .correlation import Correlation
 from .identity import CurrentIdentity
 from .projects import router as projects_router
 from .uniprot import router as uniprot_router
+from .rpc.router import RpcRouter, rpc_applications
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
 
 API_TITLE = "ProteinForge API"
@@ -51,28 +52,23 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
 
     app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
     app.state.settings = resolved
+    # RPC services share the app state with REST; added first so CORS wraps them too.
+    app.add_middleware(RpcRouter, applications=rpc_applications(app.state, API_VERSION))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(resolved.allowed_origins),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
-        expose_headers=[REQUEST_ID_HEADER],
+        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, *RPC_REQUEST_HEADERS],
+        expose_headers=[REQUEST_ID_HEADER, *RPC_RESPONSE_HEADERS],
     )
+    # Outermost, so REST, RPC and CORS answers all carry the request id.
+    app.add_middleware(Correlation)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unexpected_exception_handler)
     app.include_router(projects_router, prefix=API_PREFIX)
     app.include_router(uniprot_router, prefix=API_PREFIX)
-
-    @app.middleware("http")
-    async def correlate(request: Request, call_next):
-        incoming = request.headers.get(REQUEST_ID_HEADER, "").strip()
-        request.state.request_id = incoming if 0 < len(incoming) <= 64 else uuid.uuid4().hex
-        response = await call_next(request)
-        response.headers[REQUEST_ID_HEADER] = request.state.request_id
-        response.headers["Cache-Control"] = "no-store"
-        return response
 
     @app.get(f"{API_PREFIX}/health", response_model=Health, tags=["service"])
     async def health() -> Health:
