@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
+from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
 
 logger = logging.getLogger(__name__)
 
@@ -162,12 +163,67 @@ class ProjectUpdate(ProjectWrite):
         return value
 
 
+class ProjectSourcePreview(Contract):
+    origin: Literal["catalog", "uniprot"]
+    accession: str = Field(pattern=r"^[A-Z0-9]{6,10}$")
+
+
+class ProjectAlignmentMetrics(Contract):
+    identities: int = Field(ge=0)
+    similarities: int = Field(ge=0)
+    columns: int = Field(gt=0, le=MAX_ALIGNMENT_LENGTH * 2)
+
+    @model_validator(mode="after")
+    def validate_counts(self):
+        if not self.identities <= self.similarities <= self.columns:
+            raise ValueError("Invalid alignment preview")
+        return self
+
+
+class ProjectAlignmentPreview(Contract):
+    first_length: int = Field(ge=0, le=MAX_ALIGNMENT_LENGTH)
+    second_length: int = Field(ge=0, le=MAX_ALIGNMENT_LENGTH)
+    first_prefix: str = Field(max_length=PROJECT_PREVIEW_RESIDUES, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")
+    second_prefix: str = Field(max_length=PROJECT_PREVIEW_RESIDUES, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")
+    matrix: Literal["BLOSUM45", "BLOSUM62", "BLOSUM80"]
+    mode: Literal["global", "local"]
+    result: ProjectAlignmentMetrics | None = None
+
+    @model_validator(mode="after")
+    def validate_lengths(self):
+        if not self.first_length + self.second_length:
+            raise ValueError("Empty comparison preview")
+        if len(self.first_prefix) != min(self.first_length, PROJECT_PREVIEW_RESIDUES) or len(self.second_prefix) != min(self.second_length, PROJECT_PREVIEW_RESIDUES):
+            raise ValueError("Invalid comparison prefix")
+        if self.result and (not self.first_length or not self.second_length):
+            raise ValueError("Missing comparison input")
+        return self
+
+
+class ProjectPreview(Contract):
+    sequence_length: int = Field(ge=0, le=MAX_SEQUENCE_LENGTH)
+    sequence_prefix: str = Field(max_length=PROJECT_PREVIEW_RESIDUES, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")
+    excluded: int = Field(ge=0)
+    descriptors: DescriptorResult | None = None
+    alignment: ProjectAlignmentPreview | None = None
+    source: ProjectSourcePreview | None = None
+
+    @model_validator(mode="after")
+    def validate_lengths(self):
+        if len(self.sequence_prefix) != min(self.sequence_length, PROJECT_PREVIEW_RESIDUES) or self.excluded > self.sequence_length:
+            raise ValueError("Invalid preview length")
+        if self.descriptors and self.descriptors.length + self.excluded != self.sequence_length:
+            raise ValueError("Invalid descriptor preview")
+        return self
+
+
 class ProjectSummary(Contract):
     id: UUID
     name: str
     status: str
     created_at: str
     updated_at: str
+    preview: ProjectPreview | None = None
 
 
 class Project(ProjectSummary):
@@ -229,10 +285,10 @@ def document(value) -> Project:
         raise HTTPException(502, "projects-invalid-response") from error
 
 
-async def fetch_projects(context: ServiceContext, owner_id: str, token: str, limit: int, offset: int) -> ProjectList:
-    """Owned project summaries, most recently updated first; `limit + 1` rows tell whether more remain."""
-    rows = await data_request(context, token, "GET", "projects", params={
-        "owner_id": f"eq.{owner_id}", "select": "id,name,status,created_at,updated_at", "order": "updated_at.desc,id.desc", "limit": limit + 1, "offset": offset,
+async def fetch_projects(context: ServiceContext, _owner_id: str, token: str, limit: int, offset: int, query: str = "", order: str = DEFAULT_PROJECT_ORDER) -> ProjectList:
+    """RLS filters the caller; PostgreSQL returns only a bounded preview, never the snapshot."""
+    rows = await data_request(context, token, "POST", PROJECT_LIST_RPC, json={
+        "p_limit": limit + 1, "p_offset": offset, "p_query": query, "p_order": order, "p_prefix_length": PROJECT_PREVIEW_RESIDUES,
     })
     try:
         if not isinstance(rows, list):
@@ -240,7 +296,7 @@ async def fetch_projects(context: ServiceContext, owner_id: str, token: str, lim
         items = [ProjectSummary.model_validate(row) for row in rows[:limit]]
     except ValueError as error:
         raise HTTPException(502, "projects-invalid-response") from error
-    return ProjectList(items=items, next_offset=offset + limit if len(rows) > limit else None)
+    return ProjectList(items=items, next_offset=offset + limit if len(rows) > limit and offset + limit <= MAX_OFFSET else None)
 
 
 async def fetch_project(context: ServiceContext, token: str, project_id: UUID) -> Project:
@@ -254,8 +310,8 @@ async def remove_project(context: ServiceContext, token: str, project_id: UUID, 
 
 
 @router.get("", response_model=ProjectList)
-async def list_projects(request: Request, identity: CurrentIdentity, token: Token, limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE), offset: int = Query(0, ge=0, le=MAX_OFFSET)):
-    return await fetch_projects(context_of(request), identity.id, token, limit, offset)
+async def list_projects(request: Request, identity: CurrentIdentity, token: Token, limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE), offset: int = Query(0, ge=0, le=MAX_OFFSET), query: str = Query("", max_length=PROJECT_NAME_LENGTH), order: Literal["recent", "name"] = DEFAULT_PROJECT_ORDER):
+    return await fetch_projects(context_of(request), identity.id, token, limit, offset, query.strip(), order)
 
 
 @router.get("/{project_id}", response_model=Project)

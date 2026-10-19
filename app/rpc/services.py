@@ -14,6 +14,7 @@ from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectUpdate, ProjectWrite
 from ..projects import fetch_project, fetch_projects, remove_project, save_project
+from ..project_config import PROJECT_NAME_LENGTH
 from ..uniprot import UNIPROT_SEARCH_SIZE, fetch_entry, search_entries
 from . import convert
 from .errors import rpc_errors
@@ -70,11 +71,18 @@ class ProjectService(StateBound):
     @rpc_errors
     async def list_projects(self, request: project_pb.ListProjectsRequest, ctx: RequestContext) -> project_pb.ListProjectsResponse:
         identity, token = await self.identity(ctx)
-        size = min(max(request.page_size, 1), MAX_PAGE_SIZE) if request.page_size else DEFAULT_PAGE_SIZE
-        listing = await fetch_projects(self.context, identity.id, token, size, convert.page_offset(request.page_token, MAX_OFFSET))
+        if not 0 <= request.page_size <= MAX_PAGE_SIZE:
+            raise ConnectError(Code.INVALID_ARGUMENT, "validation: page_size")
+        if len(request.query) > PROJECT_NAME_LENGTH or any(ord(char) < 32 for char in request.query):
+            raise ConnectError(Code.INVALID_ARGUMENT, "validation: query")
+        query = request.query.strip()
+        order = convert.project_order(request.order)
+        size = request.page_size or DEFAULT_PAGE_SIZE
+        listing = await fetch_projects(self.context, identity.id, token, size, convert.page_offset(request.page_token, MAX_OFFSET, query, order), query, order)
         return project_pb.ListProjectsResponse(
             projects=[convert.summary_message(item) for item in listing.items],
-            next_page_token=convert.page_token(listing.next_offset),
+            next_page_token=convert.page_token(listing.next_offset, query, order),
+            query_applied=True,
         )
 
     @rpc_errors

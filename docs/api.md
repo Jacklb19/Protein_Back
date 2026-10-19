@@ -1,6 +1,6 @@
 # Contratos de API
 
-Actualizado el 12 de octubre de 2026. OpenAPI generado por FastAPI (`/docs` y `/openapi.json` en local) es la referencia ejecutable de lo implementado. Proyectos implementados localmente; activación de base remota pendiente.
+Actualizado el 19 de octubre de 2026. OpenAPI generado por FastAPI (`/docs` y `/openapi.json` en local) es la referencia ejecutable de REST. CRUD/gRPC-Web publicados previamente. Esta entrega añade vistas previas y consulta global; requiere la nueva migración antes de publicar el backend.
 
 ## Implementado
 
@@ -16,6 +16,8 @@ También implementados GET /v1/uniprot/search y GET /v1/uniprot/{accession}; ver
 | PUT /v1/projects/{id} | Guardar o renombrar con versión conocida; 409 | Bearer JWT |
 | DELETE /v1/projects/{id} | Eliminar con versión conocida y cascada; 204 | Bearer JWT |
 
+El listado acepta `limit` (1–100), `offset` (0–100.000), `query` (substring literal del nombre, sin distinguir mayúsculas, hasta 120 caracteres) y `order` (`recent` por defecto, o `name`). Filtra/ordena en SQL antes de paginar. Los resúmenes incluyen `preview` opcional: longitud, prefijo de hasta 40 residuos, exclusiones, propiedades guardadas, procedencia sin secuencia, y longitudes/prefijos/parámetros/conteos de comparación. Resultados ausentes son `null`, no ceros. No descarga snapshots completos para la lista ni recalcula resultados. `pf_list_projects` y `pf_project_preview` son SECURITY INVOKER con permisos exclusivos de authenticated. [Migración nueva](../supabase/migrations/20261019000001_project_previews.sql).
+
 Validación del token: la API consulta `GET {SUPABASE_URL}/auth/v1/user` con la `apikey` pública y el token del cliente. No se verifica la firma localmente ni se guarda ningún secreto de JWT; un token inválido o caducado devuelve 401 con `WWW-Authenticate: Bearer`. Si Supabase no responde, 502 o 504 explícitos; si la API no tiene configuración de identidad, 503.
 
 Errores en formato RFC 9457 (`application/problem+json`) con `type`, `title`, `status`, `detail`, `instance` y `requestId`. Cada respuesta lleva `X-Request-Id`; el cliente puede enviarlo para correlacionar. Los errores de validación nombran campos, nunca valores: ninguna secuencia ni secreto aparece en una respuesta de error.
@@ -24,7 +26,7 @@ CORS limitado a `ALLOWED_ORIGINS` (lista separada por comas) o, en su defecto, `
 
 ## Previsto, sin implementar
 
-Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de proyectos en [persistencia](project-persistence.md). Respuestas no-store; guardar requiere las dos migraciones y publicación autorizadas por el usuario.
+Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de proyectos en [persistencia](project-persistence.md). Respuestas no-store; la nueva consulta requiere la migración de vistas previas. La persistencia original ya está activada según el propietario.
 
 | Método y ruta | Propósito | Autenticación prevista |
 |---|---|---|
@@ -54,6 +56,8 @@ Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nati
 El token se envía en `Authorization: Bearer` igual que en REST. Errores: 401→`UNAUTHENTICATED`, 403→`PERMISSION_DENIED`, 404→`NOT_FOUND`, 409→`ABORTED`, 400/422→`INVALID_ARGUMENT` (`validation: <campos>`, sin valores enviados), 429→`RESOURCE_EXHAUSTED`, 502/503→`UNAVAILABLE`, 504→`DEADLINE_EXCEEDED`, esquema o identidad sin configurar→`FAILED_PRECONDITION`, otro→`INTERNAL` (`internal`). El mensaje es siempre un código estable. Paginación con `page_token` opaco; un token no emitido por el servidor da `INVALID_ARGUMENT`. Mensajes de hasta 2 MB. CORS expone `Grpc-Status`, `Grpc-Message` y admite las cabeceras de Connect y gRPC-Web. Todas las respuestas llevan `X-Request-Id` y `Cache-Control: no-store`.
 
 Código generado en `app/rpc/gen/` (versionado; no editar). Regenerar tras cambiar un `.proto`:
+
+`ListProjectsRequest` añade `query` y `ProjectOrder`; `ProjectSummary.preview` es el campo 6, opcional. `ListProjectsResponse.query_applied` permite detectar servidores antiguos que ignoran los nuevos campos: el cliente no presenta esa respuesta como una búsqueda/orden por nombre correctos. No cambia ningún número/tipo anterior. El token opaco conserva compatibilidad con el listado por defecto y, cuando hay consulta u orden por nombre, queda ligado a esos valores. Cambiar consulta/orden con un token anterior da `INVALID_ARGUMENT`. La búsqueda es literal: `%` y `_` no son comodines. La paginación sigue usando desplazamiento; cambios concurrentes de la colección pueden desplazar filas, por lo que el cliente deduplica al ampliar y reinicia al refrescar o escribir. No es un snapshot transaccional de varias páginas.
 
 ```bash
 .venv/Scripts/python -m pip install -r requirements-dev.txt

@@ -7,6 +7,7 @@ validator in app/projects.py applies unchanged. Outgoing results start from vali
 from __future__ import annotations
 
 import base64
+import hashlib
 from datetime import datetime
 from typing import Any
 
@@ -17,6 +18,9 @@ from protobuf.wkt.google.protobuf.timestamp_pb import Timestamp
 from ..projects import AlignmentSnapshot as AlignmentModel
 from ..projects import Project as ProjectModel
 from ..projects import ProjectSummary as SummaryModel
+from ..projects import ProjectPreview, ProjectAlignmentPreview, ProjectAlignmentMetrics, ProjectSourcePreview
+from ..project_config import DEFAULT_PROJECT_ORDER, PROJECT_PREVIEW_RESIDUES
+from ..project_config import PROJECT_ORDERS
 from ..projects import SequenceSource as SourceModel
 from ..projects import Workspace as WorkspaceModel
 from ..uniprot import EntrySummary as EntrySummaryModel
@@ -34,6 +38,7 @@ MODES = {workspace_pb.AlignmentMode.GLOBAL: "global", workspace_pb.AlignmentMode
 TERMINAL_GAPS = {workspace_pb.TerminalGaps.FREE: "free", workspace_pb.TerminalGaps.NOT_APPLICABLE: "not-applicable"}
 ORIGINS = {workspace_pb.SourceOrigin.CATALOG: "catalog", workspace_pb.SourceOrigin.UNIPROT: "uniprot"}
 STATUSES = {"draft": project_pb.ProjectStatus.DRAFT}
+ORDERS = {project_pb.ProjectOrder.UNSPECIFIED: DEFAULT_PROJECT_ORDER, project_pb.ProjectOrder.RECENT: PROJECT_ORDERS[0], project_pb.ProjectOrder.NAME: PROJECT_ORDERS[1]}
 PAGE_TOKEN_PREFIX = "offset:"
 
 
@@ -46,6 +51,10 @@ def _enum(mapping: dict, value: Any, field: str) -> str:
         return mapping[value]
     except KeyError as error:
         raise ConnectError(Code.INVALID_ARGUMENT, f"validation: {field}") from error
+
+
+def project_order(value: project_pb.ProjectOrder) -> str:
+    return _enum(ORDERS, value, "order")
 
 
 def optional(message: Any, field: str) -> Any:
@@ -207,12 +216,52 @@ def workspace_message(workspace: WorkspaceModel) -> workspace_pb.Workspace:
 
 
 def summary_message(summary: SummaryModel) -> project_pb.ProjectSummary:
+    preview = summary.preview
+    if isinstance(summary, ProjectModel):
+        workspace = summary.workspace
+        alignment = workspace.alignment
+        result = alignment.result
+        cap = PROJECT_PREVIEW_RESIDUES
+        preview = ProjectPreview(
+            sequence_length=len(summary.active_sequence), sequence_prefix=summary.active_sequence[:cap],
+            excluded=sum(residue in "UOBZX" for residue in summary.active_sequence),
+            descriptors=workspace.descriptors.result if workspace.descriptors else None,
+            source=ProjectSourcePreview(origin=workspace.source.origin, accession=workspace.source.accession) if workspace.source else None,
+            alignment=ProjectAlignmentPreview(
+                first_length=len(alignment.first), second_length=len(alignment.second), first_prefix=alignment.first[:cap], second_prefix=alignment.second[:cap],
+                matrix=alignment.matrix, mode=alignment.mode,
+                result=ProjectAlignmentMetrics(identities=result.identities, similarities=result.similarities, columns=result.columns) if result else None,
+            ) if alignment.first or alignment.second else None,
+        )
     return project_pb.ProjectSummary(
         id=str(summary.id),
         name=summary.name,
         status=STATUSES.get(summary.status, project_pb.ProjectStatus.UNSPECIFIED),
         create_time=timestamp(summary.created_at),
         update_time=timestamp(summary.updated_at),
+        preview=preview_message(preview),
+    )
+
+
+def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview | None:
+    if preview is None:
+        return None
+    descriptors, alignment, source = preview.descriptors, preview.alignment, preview.source
+    result = alignment.result if alignment else None
+    return project_pb.ProjectPreview(
+        sequence_length=preview.sequence_length, sequence_prefix=preview.sequence_prefix, excluded=preview.excluded,
+        descriptors=workspace_pb.DescriptorResult(
+            mass_da=descriptors.mass_da, isoelectric_point=descriptors.isoelectric_point,
+            instability_index=descriptors.instability_index, aliphatic_index=descriptors.aliphatic_index,
+            gravy=descriptors.gravy, length=descriptors.length,
+        ) if descriptors else None,
+        source=project_pb.ProjectSourcePreview(origin=_reverse(ORIGINS)[source.origin], accession=source.accession) if source else None,
+        alignment=project_pb.ProjectAlignmentPreview(
+            first_length=alignment.first_length, second_length=alignment.second_length,
+            first_prefix=alignment.first_prefix, second_prefix=alignment.second_prefix,
+            matrix=_reverse(MATRICES)[alignment.matrix], mode=_reverse(MODES)[alignment.mode],
+            result=project_pb.ProjectAlignmentMetrics(identities=result.identities, similarities=result.similarities, columns=result.columns) if result else None,
+        ) if alignment else None,
     )
 
 
@@ -247,21 +296,29 @@ def entry_message(entry: EntryModel) -> reference_pb.Entry:
 
 # Pagination --------------------------------------------------------------------------------
 
-def page_token(offset: int | None) -> str:
+def pagination_prefix(query: str, order: str) -> str:
+    if not query and order == DEFAULT_PROJECT_ORDER:
+        return PAGE_TOKEN_PREFIX
+    digest = hashlib.sha256(f"{order}\0{query}".encode()).hexdigest()
+    return f"query:{digest}:"
+
+
+def page_token(offset: int | None, query: str = "", order: str = DEFAULT_PROJECT_ORDER) -> str:
     if offset is None:
         return ""
-    return base64.urlsafe_b64encode(f"{PAGE_TOKEN_PREFIX}{offset}".encode()).decode().rstrip("=")
+    return base64.urlsafe_b64encode(f"{pagination_prefix(query, order)}{offset}".encode()).decode().rstrip("=")
 
 
-def page_offset(token: str, maximum: int) -> int:
+def page_offset(token: str, maximum: int, query: str = "", order: str = DEFAULT_PROJECT_ORDER) -> int:
     """Offset hidden in an opaque page token; INVALID_ARGUMENT for anything not issued by page_token."""
     if not token:
         return 0
     try:
         decoded = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode()
-        if not decoded.startswith(PAGE_TOKEN_PREFIX):
+        prefix = pagination_prefix(query, order)
+        if not decoded.startswith(prefix):
             raise ValueError("Unknown token")
-        offset = int(decoded[len(PAGE_TOKEN_PREFIX):])
+        offset = int(decoded[len(prefix):])
         if not 0 <= offset <= maximum:
             raise ValueError("Offset out of range")
         return offset

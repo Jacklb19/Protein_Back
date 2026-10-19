@@ -18,10 +18,10 @@ if TYPE_CHECKING:
     from protobuf import DescFile
     from protobuf.wkt.google.protobuf.timestamp_pb import Timestamp
 
-    from .workspace_pb import Workspace
+    from .workspace_pb import AlignmentMode, DescriptorResult, SourceOrigin, SubstitutionMatrix, Workspace
 
 
-_ProjectSummaryFields: TypeAlias = Literal["id", "name", "status", "create_time", "update_time"]
+_ProjectSummaryFields: TypeAlias = Literal["id", "name", "status", "create_time", "update_time", "preview"]
 
 class ProjectSummary(Message[_ProjectSummaryFields]):
     """
@@ -54,9 +54,15 @@ class ProjectSummary(Message[_ProjectSummaryFields]):
             ```proto
             optional google.protobuf.Timestamp update_time = 5;
             ```
+        preview:
+            Optional for compatibility with older servers and stored projects.
+
+            ```proto
+            optional proteinforge.project.v1.ProjectPreview preview = 6;
+            ```
     """
 
-    __slots__ = ("id", "name", "status", "create_time", "update_time")
+    __slots__ = ("id", "name", "status", "create_time", "update_time", "preview")
 
     if TYPE_CHECKING:
 
@@ -68,6 +74,7 @@ class ProjectSummary(Message[_ProjectSummaryFields]):
             status: ProjectStatus | None = None,
             create_time: Timestamp | None = None,
             update_time: Timestamp | None = None,
+            preview: ProjectPreview | None = None,
         ) -> None:
             pass
 
@@ -76,6 +83,217 @@ class ProjectSummary(Message[_ProjectSummaryFields]):
         status: ProjectStatus
         create_time: Timestamp | None
         update_time: Timestamp | None
+        preview: ProjectPreview | None
+
+_ProjectPreviewFields: TypeAlias = Literal["sequence_length", "sequence_prefix", "descriptors", "alignment", "source", "excluded"]
+
+class ProjectPreview(Message[_ProjectPreviewFields]):
+    """
+    Saved evidence only. An absent result was not calculated or does not match its inputs.
+
+    ```proto
+    message proteinforge.project.v1.ProjectPreview
+    ```
+
+    Attributes:
+        sequence_length:
+            ```proto
+            int32 sequence_length = 1;
+            ```
+        sequence_prefix:
+            At most 40 residues from the beginning; not a complete sequence representation.
+
+            ```proto
+            string sequence_prefix = 2;
+            ```
+        descriptors:
+            ```proto
+            optional proteinforge.project.v1.DescriptorResult descriptors = 3;
+            ```
+        alignment:
+            Present when either comparison input is nonempty, even without a calculated result.
+
+            ```proto
+            optional proteinforge.project.v1.ProjectAlignmentPreview alignment = 4;
+            ```
+        source:
+            ```proto
+            optional proteinforge.project.v1.ProjectSourcePreview source = 5;
+            ```
+        excluded:
+            Nonstandard residues omitted from descriptor calculation.
+
+            ```proto
+            int32 excluded = 6;
+            ```
+    """
+
+    __slots__ = ("sequence_length", "sequence_prefix", "descriptors", "alignment", "source", "excluded")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            sequence_length: int = 0,
+            sequence_prefix: str = "",
+            descriptors: DescriptorResult | None = None,
+            alignment: ProjectAlignmentPreview | None = None,
+            source: ProjectSourcePreview | None = None,
+            excluded: int = 0,
+        ) -> None:
+            pass
+
+        sequence_length: int
+        sequence_prefix: str
+        descriptors: DescriptorResult | None
+        alignment: ProjectAlignmentPreview | None
+        source: ProjectSourcePreview | None
+        excluded: int
+
+_ProjectAlignmentPreviewFields: TypeAlias = Literal["first_length", "second_length", "first_prefix", "second_prefix", "matrix", "mode", "result"]
+
+class ProjectAlignmentPreview(Message[_ProjectAlignmentPreviewFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.ProjectAlignmentPreview
+    ```
+
+    Attributes:
+        first_length:
+            ```proto
+            int32 first_length = 1;
+            ```
+        second_length:
+            ```proto
+            int32 second_length = 2;
+            ```
+        first_prefix:
+            Bounded prefixes, as for the active sequence.
+
+            ```proto
+            string first_prefix = 3;
+            ```
+        second_prefix:
+            ```proto
+            string second_prefix = 4;
+            ```
+        matrix:
+            ```proto
+            proteinforge.project.v1.SubstitutionMatrix matrix = 5;
+            ```
+        mode:
+            ```proto
+            proteinforge.project.v1.AlignmentMode mode = 6;
+            ```
+        result:
+            Absent until a matching alignment has been saved.
+
+            ```proto
+            optional proteinforge.project.v1.ProjectAlignmentMetrics result = 7;
+            ```
+    """
+
+    __slots__ = ("first_length", "second_length", "first_prefix", "second_prefix", "matrix", "mode", "result")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            first_length: int = 0,
+            second_length: int = 0,
+            first_prefix: str = "",
+            second_prefix: str = "",
+            matrix: SubstitutionMatrix | None = None,
+            mode: AlignmentMode | None = None,
+            result: ProjectAlignmentMetrics | None = None,
+        ) -> None:
+            pass
+
+        first_length: int
+        second_length: int
+        first_prefix: str
+        second_prefix: str
+        matrix: SubstitutionMatrix
+        mode: AlignmentMode
+        result: ProjectAlignmentMetrics | None
+
+_ProjectAlignmentMetricsFields: TypeAlias = Literal["identities", "similarities", "columns"]
+
+class ProjectAlignmentMetrics(Message[_ProjectAlignmentMetricsFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.ProjectAlignmentMetrics
+    ```
+
+    Attributes:
+        identities:
+            ```proto
+            int32 identities = 1;
+            ```
+        similarities:
+            ```proto
+            int32 similarities = 2;
+            ```
+        columns:
+            ```proto
+            int32 columns = 3;
+            ```
+    """
+
+    __slots__ = ("identities", "similarities", "columns")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            identities: int = 0,
+            similarities: int = 0,
+            columns: int = 0,
+        ) -> None:
+            pass
+
+        identities: int
+        similarities: int
+        columns: int
+
+_ProjectSourcePreviewFields: TypeAlias = Literal["origin", "accession"]
+
+class ProjectSourcePreview(Message[_ProjectSourcePreviewFields]):
+    """
+    Provenance of exactly the saved active sequence, without that sequence.
+
+    ```proto
+    message proteinforge.project.v1.ProjectSourcePreview
+    ```
+
+    Attributes:
+        origin:
+            ```proto
+            proteinforge.project.v1.SourceOrigin origin = 1;
+            ```
+        accession:
+            ```proto
+            string accession = 2;
+            ```
+    """
+
+    __slots__ = ("origin", "accession")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            origin: SourceOrigin | None = None,
+            accession: str = "",
+        ) -> None:
+            pass
+
+        origin: SourceOrigin
+        accession: str
 
 _ProjectFields: TypeAlias = Literal["summary", "active_sequence", "workspace"]
 
@@ -119,7 +337,7 @@ class Project(Message[_ProjectFields]):
         active_sequence: str
         workspace: Workspace | None
 
-_ListProjectsRequestFields: TypeAlias = Literal["page_size", "page_token"]
+_ListProjectsRequestFields: TypeAlias = Literal["page_size", "page_token", "query", "order"]
 
 class ListProjectsRequest(Message[_ListProjectsRequestFields]):
     """
@@ -140,9 +358,19 @@ class ListProjectsRequest(Message[_ListProjectsRequestFields]):
             ```proto
             string page_token = 2;
             ```
+        query:
+            Literal case-insensitive substring of the name, at most 120 characters.
+
+            ```proto
+            string query = 3;
+            ```
+        order:
+            ```proto
+            proteinforge.project.v1.ProjectOrder order = 4;
+            ```
     """
 
-    __slots__ = ("page_size", "page_token")
+    __slots__ = ("page_size", "page_token", "query", "order")
 
     if TYPE_CHECKING:
 
@@ -151,13 +379,17 @@ class ListProjectsRequest(Message[_ListProjectsRequestFields]):
             *,
             page_size: int = 0,
             page_token: str = "",
+            query: str = "",
+            order: ProjectOrder | None = None,
         ) -> None:
             pass
 
         page_size: int
         page_token: str
+        query: str
+        order: ProjectOrder
 
-_ListProjectsResponseFields: TypeAlias = Literal["projects", "next_page_token"]
+_ListProjectsResponseFields: TypeAlias = Literal["projects", "next_page_token", "query_applied"]
 
 class ListProjectsResponse(Message[_ListProjectsResponseFields]):
     """
@@ -176,9 +408,16 @@ class ListProjectsResponse(Message[_ListProjectsResponseFields]):
             ```proto
             string next_page_token = 2;
             ```
+        query_applied:
+            True when query/order were applied to the whole collection. Older servers omit this;
+            clients must not mistake an unfiltered legacy response for successful search.
+
+            ```proto
+            bool query_applied = 3;
+            ```
     """
 
-    __slots__ = ("projects", "next_page_token")
+    __slots__ = ("projects", "next_page_token", "query_applied")
 
     if TYPE_CHECKING:
 
@@ -187,11 +426,13 @@ class ListProjectsResponse(Message[_ListProjectsResponseFields]):
             *,
             projects: list[ProjectSummary] | None = None,
             next_page_token: str = "",
+            query_applied: bool = False,
         ) -> None:
             pass
 
         projects: list[ProjectSummary]
         next_page_token: str
+        query_applied: bool
 
 _GetProjectRequestFields: TypeAlias = Literal["id"]
 
@@ -471,15 +712,48 @@ class ProjectStatus(Enum):
     UNSPECIFIED = 0
     DRAFT = 1
 
+class ProjectOrder(Enum):
+    """
+    ```proto
+    enum proteinforge.project.v1.ProjectOrder
+    ```
+
+    Attributes:
+        UNSPECIFIED:
+            ```proto
+            PROJECT_ORDER_UNSPECIFIED = 0
+            ```
+        RECENT:
+            Most recently updated first, then UUID descending.
+
+            ```proto
+            PROJECT_ORDER_RECENT = 1
+            ```
+        NAME:
+            Case-insensitive name ascending, then UUID ascending.
+
+            ```proto
+            PROJECT_ORDER_NAME = 2
+            ```
+    """
+
+    UNSPECIFIED = 0
+    RECENT = 1
+    NAME = 2
+
 
 _DESC = file_desc(
-    b'\n-proteinforge/project/v1/project_service.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\'proteinforge/project/v1/workspace.proto"\xee\x01\n\x0eProjectSummary\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12>\n\x06status\x18\x03 \x01(\x0e2&.proteinforge.project.v1.ProjectStatusR\x06status\x12;\n\x0bcreate_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\ncreateTime\x12;\n\x0bupdate_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\nupdateTime"\xb7\x01\n\x07Project\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x07summary\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"Q\n\x13ListProjectsRequest\x12\x1b\n\tpage_size\x18\x01 \x01(\x05R\x08pageSize\x12\x1d\n\npage_token\x18\x02 \x01(\tR\tpageToken"\x83\x01\n\x14ListProjectsResponse\x12C\n\x08projects\x18\x01 \x03(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x08projects\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken"#\n\x11GetProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id"P\n\x12GetProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\x95\x01\n\x14CreateProjectRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15CreateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xf3\x01\n\x14UpdateProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x04 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x05 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15UpdateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"t\n\x14DeleteProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime"\x17\n\x15DeleteProjectResponse*I\n\rProjectStatus\x12\x1e\n\x1aPROJECT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_STATUS_DRAFT\x10\x012\xbe\x04\n\x0eProjectService\x12p\n\x0cListProjects\x12,.proteinforge.project.v1.ListProjectsRequest\x1a-.proteinforge.project.v1.ListProjectsResponse"\x03\x90\x02\x01\x12j\n\nGetProject\x12*.proteinforge.project.v1.GetProjectRequest\x1a+.proteinforge.project.v1.GetProjectResponse"\x03\x90\x02\x01\x12n\n\rCreateProject\x12-.proteinforge.project.v1.CreateProjectRequest\x1a..proteinforge.project.v1.CreateProjectResponse\x12n\n\rUpdateProject\x12-.proteinforge.project.v1.UpdateProjectRequest\x1a..proteinforge.project.v1.UpdateProjectResponse\x12n\n\rDeleteProject\x12-.proteinforge.project.v1.DeleteProjectRequest\x1a..proteinforge.project.v1.DeleteProjectResponseb\x06proto3',
+    b'\n-proteinforge/project/v1/project_service.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\'proteinforge/project/v1/workspace.proto"\xb1\x02\n\x0eProjectSummary\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12>\n\x06status\x18\x03 \x01(\x0e2&.proteinforge.project.v1.ProjectStatusR\x06status\x12;\n\x0bcreate_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\ncreateTime\x12;\n\x0bupdate_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\nupdateTime\x12A\n\x07preview\x18\x06 \x01(\x0b2\'.proteinforge.project.v1.ProjectPreviewR\x07preview"\xe2\x02\n\x0eProjectPreview\x12\'\n\x0fsequence_length\x18\x01 \x01(\x05R\x0esequenceLength\x12\'\n\x0fsequence_prefix\x18\x02 \x01(\tR\x0esequencePrefix\x12K\n\x0bdescriptors\x18\x03 \x01(\x0b2).proteinforge.project.v1.DescriptorResultR\x0bdescriptors\x12N\n\talignment\x18\x04 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentPreviewR\talignment\x12E\n\x06source\x18\x05 \x01(\x0b2-.proteinforge.project.v1.ProjectSourcePreviewR\x06source\x12\x1a\n\x08excluded\x18\x06 \x01(\x05R\x08excluded"\xf4\x02\n\x17ProjectAlignmentPreview\x12!\n\x0cfirst_length\x18\x01 \x01(\x05R\x0bfirstLength\x12#\n\rsecond_length\x18\x02 \x01(\x05R\x0csecondLength\x12!\n\x0cfirst_prefix\x18\x03 \x01(\tR\x0bfirstPrefix\x12#\n\rsecond_prefix\x18\x04 \x01(\tR\x0csecondPrefix\x12C\n\x06matrix\x18\x05 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x06 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12H\n\x06result\x18\x07 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentMetricsR\x06result"w\n\x17ProjectAlignmentMetrics\x12\x1e\n\nidentities\x18\x01 \x01(\x05R\nidentities\x12"\n\x0csimilarities\x18\x02 \x01(\x05R\x0csimilarities\x12\x18\n\x07columns\x18\x03 \x01(\x05R\x07columns"s\n\x14ProjectSourcePreview\x12=\n\x06origin\x18\x01 \x01(\x0e2%.proteinforge.project.v1.SourceOriginR\x06origin\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession"\xb7\x01\n\x07Project\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x07summary\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"\xa4\x01\n\x13ListProjectsRequest\x12\x1b\n\tpage_size\x18\x01 \x01(\x05R\x08pageSize\x12\x1d\n\npage_token\x18\x02 \x01(\tR\tpageToken\x12\x14\n\x05query\x18\x03 \x01(\tR\x05query\x12;\n\x05order\x18\x04 \x01(\x0e2%.proteinforge.project.v1.ProjectOrderR\x05order"\xa8\x01\n\x14ListProjectsResponse\x12C\n\x08projects\x18\x01 \x03(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x08projects\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12#\n\rquery_applied\x18\x03 \x01(\x08R\x0cqueryApplied"#\n\x11GetProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id"P\n\x12GetProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\x95\x01\n\x14CreateProjectRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15CreateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xf3\x01\n\x14UpdateProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x04 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x05 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15UpdateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"t\n\x14DeleteProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime"\x17\n\x15DeleteProjectResponse*I\n\rProjectStatus\x12\x1e\n\x1aPROJECT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_STATUS_DRAFT\x10\x01*_\n\x0cProjectOrder\x12\x1d\n\x19PROJECT_ORDER_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_ORDER_RECENT\x10\x01\x12\x16\n\x12PROJECT_ORDER_NAME\x10\x022\xbe\x04\n\x0eProjectService\x12p\n\x0cListProjects\x12,.proteinforge.project.v1.ListProjectsRequest\x1a-.proteinforge.project.v1.ListProjectsResponse"\x03\x90\x02\x01\x12j\n\nGetProject\x12*.proteinforge.project.v1.GetProjectRequest\x1a+.proteinforge.project.v1.GetProjectResponse"\x03\x90\x02\x01\x12n\n\rCreateProject\x12-.proteinforge.project.v1.CreateProjectRequest\x1a..proteinforge.project.v1.CreateProjectResponse\x12n\n\rUpdateProject\x12-.proteinforge.project.v1.UpdateProjectRequest\x1a..proteinforge.project.v1.UpdateProjectResponse\x12n\n\rDeleteProject\x12-.proteinforge.project.v1.DeleteProjectRequest\x1a..proteinforge.project.v1.DeleteProjectResponseb\x06proto3',
     [
         timestamp_pb.desc(),
         workspace_pb.desc(),
     ],
     {
         "ProjectSummary": ProjectSummary,
+        "ProjectPreview": ProjectPreview,
+        "ProjectAlignmentPreview": ProjectAlignmentPreview,
+        "ProjectAlignmentMetrics": ProjectAlignmentMetrics,
+        "ProjectSourcePreview": ProjectSourcePreview,
         "Project": Project,
         "ListProjectsRequest": ListProjectsRequest,
         "ListProjectsResponse": ListProjectsResponse,
@@ -492,6 +766,7 @@ _DESC = file_desc(
         "DeleteProjectRequest": DeleteProjectRequest,
         "DeleteProjectResponse": DeleteProjectResponse,
         "ProjectStatus": ProjectStatus,
+        "ProjectOrder": ProjectOrder,
     },
 )
 
