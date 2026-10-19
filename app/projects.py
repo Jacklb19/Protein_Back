@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ValidationError, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
+
+logger = logging.getLogger(__name__)
 
 MAX_SEQUENCE_LENGTH = 100_000
 MAX_ALIGNMENT_LENGTH = 5_000
@@ -204,6 +207,8 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
             raise HTTPException(404, "project-not-found")
         if response.status_code == 403:
             raise HTTPException(403, "project-forbidden")
+        # Status and error code only: provider messages can quote submitted values.
+        logger.warning("Supabase data request failed: %s %s -> %s %s", method, path.split("?")[0], response.status_code, code or "no-code")
         raise HTTPException(502, "projects-provider-error")
     try:
         return response.json()
@@ -216,6 +221,10 @@ def document(value) -> Project:
         raise HTTPException(404, "project-not-found")
     try:
         return Project.model_validate(value)
+    except ValidationError as error:
+        # Field paths only, never the stored values.
+        logger.warning("Stored project does not match the contract: %s", sorted({".".join(map(str, item["loc"])) for item in error.errors()}))
+        raise HTTPException(502, "projects-invalid-response") from error
     except ValueError as error:
         raise HTTPException(502, "projects-invalid-response") from error
 

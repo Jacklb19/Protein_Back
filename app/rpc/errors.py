@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import ParamSpec, TypeVar
@@ -31,6 +32,8 @@ DETAIL_CODES: dict[str, Code] = {
     "identity-not-configured": Code.FAILED_PRECONDITION,
 }
 
+logger = logging.getLogger(__name__)
+
 VALIDATION_CODE = "validation"
 INTERNAL_CODE = "internal"
 
@@ -43,11 +46,14 @@ def to_connect_error(error: Exception) -> ConnectError:
         return error
     if isinstance(error, HTTPException):
         detail = error.detail if isinstance(error.detail, str) else "http-error"
+        if error.status_code >= 500:
+            logger.warning("RPC method failed: %s %s", error.status_code, detail)
         return ConnectError(DETAIL_CODES.get(detail, STATUS_CODES.get(error.status_code, Code.INTERNAL)), detail)
     if isinstance(error, ValidationError):
         # Field paths only: submitted values (sequences, names) never appear in errors.
         fields = sorted({".".join(str(part) for part in item.get("loc", ())) for item in error.errors()})
         return ConnectError(Code.INVALID_ARGUMENT, f"{VALIDATION_CODE}: {', '.join(fields)}")
+    logger.exception("Unexpected failure in an RPC method", exc_info=error)
     return ConnectError(Code.INTERNAL, INTERNAL_CODE)
 
 
