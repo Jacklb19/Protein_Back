@@ -48,6 +48,11 @@ def _enum(mapping: dict, value: Any, field: str) -> str:
         raise ConnectError(Code.INVALID_ARGUMENT, f"validation: {field}") from error
 
 
+def optional(message: Any, field: str) -> Any:
+    """Value of an `optional` field, or None when unset (reading it directly gives the zero value)."""
+    return getattr(message, field) if message.has_field(field) else None
+
+
 def timestamp(value: str | datetime | None) -> Timestamp | None:
     if value is None:
         return None
@@ -77,8 +82,8 @@ def workspace_document(workspace: workspace_pb.Workspace | None) -> dict[str, An
             "origin": _enum(ORIGINS, source.origin, "workspace.source.origin"),
             "accession": source.accession,
             "sequence": source.sequence,
-            "entryVersion": source.entry_version,
-            "sequenceVersion": source.sequence_version,
+            "entryVersion": optional(source, "entry_version"),
+            "sequenceVersion": optional(source, "sequence_version"),
             "retrievedAt": source.retrieve_time.to_datetime().isoformat() if source.retrieve_time is not None else None,
         }
     if workspace.descriptors is not None:

@@ -106,6 +106,19 @@ class RpcTests(unittest.TestCase):
         self.assertEqual(project["workspace"]["alignment"]["matrix"], "SUBSTITUTION_MATRIX_BLOSUM62")
         self.assertTrue(project["summary"]["updateTime"].startswith("2026-10-12T08:00:00.123456"))
 
+    def test_unset_optional_versions_stay_empty(self):
+        # A bundled example has no entry version; it must reach the contract as null, not 0.
+        source = {"origin": "SOURCE_ORIGIN_CATALOG", "accession": "P01308", "sequence": "ACD", "sequenceVersion": 1}
+        def data(request):
+            body = json.loads(request.content)
+            self.assertEqual(body["p_workspace"]["source"], {"origin": "catalog", "accession": "P01308", "sequence": "ACD", "entryVersion": None, "sequenceVersion": 1, "retrievedAt": None})
+            return httpx.Response(200, json={**DOCUMENT, "workspace": body["p_workspace"]})
+        with self.client(data) as client:
+            response = self.call(client, f"{PROJECTS}/CreateProject", {"name": "Insulin study", "activeSequence": "ACD", "workspace": {**RPC_WORKSPACE, "source": source}}, TOKEN)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["project"]["workspace"]["source"]["sequenceVersion"], 1)
+        self.assertNotIn("entryVersion", response.json()["project"]["workspace"]["source"])
+
     def test_validation_names_fields_without_echoing_values(self):
         with self.client(lambda _: self.fail("Invalid data reached Supabase")) as client:
             response = self.call(client, f"{PROJECTS}/CreateProject", {"name": "x", "activeSequence": "ACD<script>", "workspace": RPC_WORKSPACE}, TOKEN)
