@@ -1,2 +1,3 @@
 # Contracts keep LF on every platform: generated code embeds their comments.
 *.proto text eol=lf
+app/rpc/gen/** text eol=lf

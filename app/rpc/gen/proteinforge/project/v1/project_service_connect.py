@@ -44,7 +44,7 @@ class ProjectService(Protocol):
     """
     async def list_projects(self, request: ListProjectsRequest, ctx: RequestContext[ListProjectsRequest, ListProjectsResponse], /) -> ListProjectsResponse:
         """
-        Most recently updated first; summaries carry no sequences.
+        Search all owned projects. Previews carry bounded prefixes, never full snapshots.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -174,7 +174,7 @@ class ProjectServiceClient(ConnectClient):
         use_get: bool = False,
     ) -> ListProjectsResponse:
         """
-        Most recently updated first; summaries carry no sequences.
+        Search all owned projects. Previews carry bounded prefixes, never full snapshots.
         """
         return await self.execute_unary(
             request=request,
@@ -298,7 +298,7 @@ class ProjectServiceSync(Protocol):
     """
     def list_projects(self, request: ListProjectsRequest, ctx: RequestContext[ListProjectsRequest, ListProjectsResponse], /) -> ListProjectsResponse:
         """
-        Most recently updated first; summaries carry no sequences.
+        Search all owned projects. Previews carry bounded prefixes, never full snapshots.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -426,7 +426,7 @@ class ProjectServiceClientSync(ConnectClientSync):
         use_get: bool = False,
     ) -> ListProjectsResponse:
         """
-        Most recently updated first; summaries carry no sequences.
+        Search all owned projects. Previews carry bounded prefixes, never full snapshots.
         """
         return self.execute_unary(
             request=request,

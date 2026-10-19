@@ -18,7 +18,7 @@ import "proteinforge/project/v1/workspace.proto";
 // server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
 // Equivalent REST routes: /v1/projects.
 service ProjectService {
-  // Most recently updated first; summaries carry no sequences.
+  // Search all owned projects. Previews carry bounded prefixes, never full snapshots.
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -45,6 +45,45 @@ message ProjectSummary {
   ProjectStatus status = 3;
   google.protobuf.Timestamp create_time = 4;
   google.protobuf.Timestamp update_time = 5;
+  // Optional for compatibility with older servers and stored projects.
+  ProjectPreview preview = 6;
+}
+
+// Saved evidence only. An absent result was not calculated or does not match its inputs.
+message ProjectPreview {
+  int32 sequence_length = 1;
+  // At most 40 residues from the beginning; not a complete sequence representation.
+  string sequence_prefix = 2;
+  DescriptorResult descriptors = 3;
+  // Present when either comparison input is nonempty, even without a calculated result.
+  ProjectAlignmentPreview alignment = 4;
+  ProjectSourcePreview source = 5;
+  // Nonstandard residues omitted from descriptor calculation.
+  int32 excluded = 6;
+}
+
+message ProjectAlignmentPreview {
+  int32 first_length = 1;
+  int32 second_length = 2;
+  // Bounded prefixes, as for the active sequence.
+  string first_prefix = 3;
+  string second_prefix = 4;
+  SubstitutionMatrix matrix = 5;
+  AlignmentMode mode = 6;
+  // Absent until a matching alignment has been saved.
+  ProjectAlignmentMetrics result = 7;
+}
+
+message ProjectAlignmentMetrics {
+  int32 identities = 1;
+  int32 similarities = 2;
+  int32 columns = 3;
+}
+
+// Provenance of exactly the saved active sequence, without that sequence.
+message ProjectSourcePreview {
+  SourceOrigin origin = 1;
+  string accession = 2;
 }
 
 message Project {
@@ -64,12 +103,26 @@ message ListProjectsRequest {
   int32 page_size = 1;
   // Opaque token from a previous response; empty for the first page.
   string page_token = 2;
+  // Literal case-insensitive substring of the name, at most 120 characters.
+  string query = 3;
+  ProjectOrder order = 4;
+}
+
+enum ProjectOrder {
+  PROJECT_ORDER_UNSPECIFIED = 0;
+  // Most recently updated first, then UUID descending.
+  PROJECT_ORDER_RECENT = 1;
+  // Case-insensitive name ascending, then UUID ascending.
+  PROJECT_ORDER_NAME = 2;
 }
 
 message ListProjectsResponse {
   repeated ProjectSummary projects = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;
+  // True when query/order were applied to the whole collection. Older servers omit this;
+  // clients must not mistake an unfiltered legacy response for successful search.
+  bool query_applied = 3;
 }
 
 message GetProjectRequest {

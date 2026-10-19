@@ -79,7 +79,8 @@ class RpcTests(unittest.TestCase):
 
     def test_listing_uses_owner_filter_and_opaque_page_tokens(self):
         def data(request):
-            self.assertIn(f"eq.{USER}", request.url.query.decode())
+            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects")
+            self.assertNotIn("owner_id", json.loads(request.content))
             row = {"id": PROJECT, "name": "Test", "status": "draft", "created_at": DATE, "updated_at": DATE}
             return httpx.Response(200, json=[row, row])
         with self.client(data) as client:
@@ -91,6 +92,37 @@ class RpcTests(unittest.TestCase):
         self.assertEqual(convert.page_offset(first["nextPageToken"], 10), 1)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(forged.json(), {"code": "invalid_argument", "message": "validation: page_token"})
+
+    def test_preview_and_global_query_preserve_saved_evidence_and_bound_pagination(self):
+        preview = {"sequenceLength": 3, "sequencePrefix": "ACD", "excluded": 0, "descriptors": None, "source": {"origin": "catalog", "accession": "P01308"}, "alignment": {"firstLength": 3, "secondLength": 3, "firstPrefix": "ACD", "secondPrefix": "ACD", "matrix": "BLOSUM62", "mode": "global", "result": None}}
+        def data(request):
+            body = json.loads(request.content)
+            self.assertEqual(body["p_query"], "Insulin")
+            self.assertEqual(body["p_order"], "name")
+            self.assertEqual(body["p_prefix_length"], 40)
+            row = {"id": PROJECT, "name": "Insulin", "status": "draft", "created_at": DATE, "updated_at": DATE, "preview": preview}
+            return httpx.Response(200, json=[row, row])
+        with self.client(data) as client:
+            first = self.call(client, f"{PROJECTS}/ListProjects", {"pageSize": 1, "query": " Insulin ", "order": "PROJECT_ORDER_NAME"}, TOKEN)
+            self.assertEqual(first.status_code, 200, first.text)
+            document = first.json()
+            self.assertTrue(document["queryApplied"])
+            self.assertEqual(document["projects"][0]["preview"]["sequencePrefix"], "ACD")
+            self.assertNotIn("descriptors", document["projects"][0]["preview"])
+            token = document["nextPageToken"]
+            second = self.call(client, f"{PROJECTS}/ListProjects", {"pageSize": 1, "query": "Insulin", "order": "PROJECT_ORDER_NAME", "pageToken": token}, TOKEN)
+            changed = self.call(client, f"{PROJECTS}/ListProjects", {"query": "Other", "pageToken": token}, TOKEN)
+            invalid = self.call(client, f"{PROJECTS}/ListProjects", {"query": "x" * 121}, TOKEN)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(changed.json()["code"], "invalid_argument")
+        self.assertEqual(invalid.json(), {"code": "invalid_argument", "message": "validation: query"})
+
+    def test_invalid_preview_does_not_leak_stored_fields(self):
+        def data(_request):
+            return httpx.Response(200, json=[{"id": PROJECT, "name": "private-name", "status": "draft", "created_at": DATE, "updated_at": DATE, "preview": {"sequenceLength": 999, "sequencePrefix": "private-sequence", "excluded": 0}}])
+        with self.client(data) as client:
+            response = self.call(client, f"{PROJECTS}/ListProjects", {}, TOKEN)
+        self.assertEqual(response.json(), {"code": "unavailable", "message": "projects-invalid-response"})
 
     def test_create_maps_messages_to_the_rest_contract(self):
         def data(request):
