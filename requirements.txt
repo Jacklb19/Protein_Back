@@ -2,3 +2,7 @@ fastapi==0.142.4
 uvicorn==0.54.0
 httpx==0.28.1
 python-dotenv==1.2.4
+connectrpc==0.12.1
+protobuf-py==0.6.0
+protobuf-py-ext==0.6.0
+pyqwest==0.12.0

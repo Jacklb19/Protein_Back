@@ -1,0 +1,2 @@
+# Contracts keep LF on every platform: generated code embeds their comments.
+*.proto text eol=lf

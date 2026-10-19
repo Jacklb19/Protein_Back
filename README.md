@@ -14,11 +14,11 @@ Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No e
 
 ## Responsabilidad
 
-FastAPI gestiona identidad, autorización, CRUD de proyectos y UniProt acotado. JWT de propietario, RLS y RPC SECURITY INVOKER. Interpretación/predicción/PDBe pendientes; Storage aún no integrado. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
+FastAPI gestiona identidad, autorización, CRUD de proyectos y UniProt acotado, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. Interpretación/predicción/PDBe pendientes; Storage aún no integrado. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
 
 ## Desarrollo local
 
-Dependencias fijadas en `requirements.txt` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4). Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
+Dependencias fijadas en `requirements.txt` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4, connectrpc 0.12.1, protobuf-py 0.6.0, pyqwest 0.12.0). Generación de código y Hypercorn para gRPC nativo en `requirements-dev.txt`. Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
 
 Para Vercel, `.python-version` fija 3.14 y la detección FastAPI usa `app/main.py:app`. Configurar `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `ALLOWED_ORIGINS` en las variables del proyecto. Build/instalación/salida del framework sin overrides; no iniciar Uvicorn como comando de build. Ver [FastAPI](https://vercel.com/docs/frameworks/backend/fastapi) y [Python](https://vercel.com/docs/functions/runtimes/python/python-version). Este ajuste no verifica un despliegue remoto.
 
@@ -38,7 +38,7 @@ El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `V
 python -m unittest discover -s tests -v
 ```
 
-Cubre auditoría estática, API y proyectos con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, los seis tests SQL se identifican como omitidos en unittest. CI ejecuta esa batería.
+Cubre auditoría estática, API REST y RPC y proyectos con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, los seis tests SQL se identifican como omitidos en unittest. CI ejecuta esa batería.
 
 ## Configuración
 

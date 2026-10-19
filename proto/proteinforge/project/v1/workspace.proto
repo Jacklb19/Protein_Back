@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package proteinforge.project.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Snapshot of the work a project keeps: the active sequence's provenance, its calculated
+// descriptors and the current comparison. Mirrors the validated JSON workspace of
+// app/projects.py (schemaVersion 1). Results are stored only when they match their inputs;
+// the API rejects stale or inconsistent snapshots with INVALID_ARGUMENT.
+//
+// Alphabet: sequences use the 20 standard residues plus U, O, B, Z and X, uppercase.
+message Workspace {
+  // Always 1 for this contract.
+  int32 schema_version = 1;
+  // Hydropathy window in residues: 9 or 19.
+  int32 profile_window = 2;
+  // Present only when the active sequence is an exact bundled or UniProt reference.
+  SequenceSource source = 3;
+  // Present only when calculated for the current active sequence.
+  DescriptorSnapshot descriptors = 4;
+  AlignmentSnapshot alignment = 5;
+}
+
+// Where a reference sequence came from. Any manual edit removes it.
+message SequenceSource {
+  SourceOrigin origin = 1;
+  // UniProt accession, 6–10 uppercase letters or digits.
+  string accession = 2;
+  // The exact sequence this provenance belongs to.
+  string sequence = 3;
+  optional int32 entry_version = 4;
+  optional int32 sequence_version = 5;
+  // When the entry was retrieved from UniProt; absent for bundled references.
+  google.protobuf.Timestamp retrieve_time = 6;
+}
+
+enum SourceOrigin {
+  SOURCE_ORIGIN_UNSPECIFIED = 0;
+  // Reference bundled with the application.
+  SOURCE_ORIGIN_CATALOG = 1;
+  // Entry retrieved from UniProt through the API.
+  SOURCE_ORIGIN_UNIPROT = 2;
+}
+
+// Descriptors calculated in the browser for the standard residues of `sequence`.
+message DescriptorSnapshot {
+  string sequence = 1;
+  // Residues U, O, B, Z or X left out of the calculation.
+  int32 excluded = 2;
+  // "proteinforge-descriptors-v1".
+  string method_version = 3;
+  DescriptorResult result = 4;
+}
+
+message DescriptorResult {
+  // Average mass including one water molecule, in daltons; > 0.
+  double mass_da = 1;
+  // Bjellqvist pK values; 0–14.
+  double isoelectric_point = 2;
+  // Guruprasad, Reddy and Pandit (1990).
+  double instability_index = 3;
+  // Ikai (1980); >= 0.
+  double aliphatic_index = 4;
+  // Kyte–Doolittle mean; -4.5 to 4.5.
+  double gravy = 5;
+  // Standard residues counted; > 0.
+  int32 length = 6;
+}
+
+// The two sequences being compared and, when current, their alignment.
+message AlignmentSnapshot {
+  // Up to 5,000 residues each.
+  string first = 1;
+  string second = 2;
+  SubstitutionMatrix matrix = 3;
+  AlignmentMode mode = 4;
+  // Present only when computed from exactly these inputs and parameters.
+  AlignmentResult result = 5;
+}
+
+// Gotoh alignment computed in the browser (Rust/WebAssembly).
+message AlignmentResult {
+  // Aligned rows with "-" for gaps; equal length to `columns`.
+  string aligned_first = 1;
+  string aligned_second = 2;
+  // "|" identical, ":" positive substitution score, " " otherwise.
+  string marks = 3;
+  double score = 4;
+  int32 identities = 5;
+  // Identities plus positive substitutions.
+  int32 similarities = 6;
+  int32 columns = 7;
+  AlignmentParameters parameters = 8;
+}
+
+message AlignmentParameters {
+  SubstitutionMatrix matrix = 1;
+  AlignmentMode mode = 2;
+  // Fixed at 10 in this version.
+  double gap_open = 3;
+  // Fixed at 0.5 in this version.
+  double gap_extend = 4;
+  TerminalGaps terminal_gaps = 5;
+}
+
+enum SubstitutionMatrix {
+  SUBSTITUTION_MATRIX_UNSPECIFIED = 0;
+  SUBSTITUTION_MATRIX_BLOSUM45 = 1;
+  SUBSTITUTION_MATRIX_BLOSUM62 = 2;
+  SUBSTITUTION_MATRIX_BLOSUM80 = 3;
+}
+
+enum AlignmentMode {
+  ALIGNMENT_MODE_UNSPECIFIED = 0;
+  // End to end, with free terminal gaps.
+  ALIGNMENT_MODE_GLOBAL = 1;
+  // Best matching stretch.
+  ALIGNMENT_MODE_LOCAL = 2;
+}
+
+enum TerminalGaps {
+  TERMINAL_GAPS_UNSPECIFIED = 0;
+  // Global mode: gaps at both ends cost nothing.
+  TERMINAL_GAPS_FREE = 1;
+  // Local mode: terminal gaps fall outside the aligned stretch.
+  TERMINAL_GAPS_NOT_APPLICABLE = 2;
+}

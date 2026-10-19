@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import Field
 
+from .context import ServiceContext, context_of
 from .identity import CurrentIdentity
 from .projects import Contract
 
@@ -14,6 +15,8 @@ UNIPROT_BASE_URL = "https://rest.uniprot.org/uniprotkb"
 UNIPROT_TIMEOUT_SECONDS = 12.0
 UNIPROT_SEARCH_SIZE = 10
 MAX_UNIPROT_BYTES = 8_000_000
+MIN_QUERY_LENGTH = 2
+MAX_QUERY_LENGTH = 200
 ACCESSION_PATTERN = r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})"
 
 
@@ -73,10 +76,10 @@ def entry(payload: dict) -> UniProtEntry:
     return UniProtEntry(**record.model_dump(), sequence=sequence, entry_version=audit["entryVersion"], sequence_version=audit["sequenceVersion"], retrieved_at=datetime.now(timezone.utc).isoformat(), function="\n".join(functions) or None, structures=structures)
 
 
-async def retrieve(request: Request, path: str, params: dict | None = None):
+async def retrieve(context: ServiceContext, path: str, params: dict | None = None):
     # Fixed destination and separately constructed headers: private identity is never sent to UniProt.
     try:
-        response = await request.app.state.http_client.get(f"{UNIPROT_BASE_URL}/{path}", params=params, headers={"Accept": "application/json"}, timeout=UNIPROT_TIMEOUT_SECONDS)
+        response = await context.http_client.get(f"{UNIPROT_BASE_URL}/{path}", params=params, headers={"Accept": "application/json"}, timeout=UNIPROT_TIMEOUT_SECONDS)
     except httpx.TimeoutException as error:
         raise HTTPException(504, "uniprot-timeout") from error
     except httpx.HTTPError as error:
@@ -98,11 +101,10 @@ async def retrieve(request: Request, path: str, params: dict | None = None):
 router = APIRouter(prefix="/uniprot", tags=["public reference data"])
 
 
-@router.get("/search", response_model=SearchResult)
-async def search(request: Request, _identity: CurrentIdentity, query: str = Query(min_length=2, max_length=200)):
-    if len(query.strip()) < 2:
+async def search_entries(context: ServiceContext, query: str) -> SearchResult:
+    if not MIN_QUERY_LENGTH <= len(query.strip()) <= MAX_QUERY_LENGTH:
         raise HTTPException(422, "uniprot-query")
-    payload = await retrieve(request, "search", {"query": query.strip(), "format": "json", "size": UNIPROT_SEARCH_SIZE + 1, "fields": "accession,id,protein_name,organism_name,length,reviewed"})
+    payload = await retrieve(context, "search", {"query": query.strip(), "format": "json", "size": UNIPROT_SEARCH_SIZE + 1, "fields": "accession,id,protein_name,organism_name,length,reviewed"})
     try:
         results = payload["results"]
         if not isinstance(results, list):
@@ -113,9 +115,10 @@ async def search(request: Request, _identity: CurrentIdentity, query: str = Quer
     return SearchResult(items=items, truncated=len(results) > UNIPROT_SEARCH_SIZE, retrieved_at=datetime.now(timezone.utc).isoformat())
 
 
-@router.get("/{accession}", response_model=UniProtEntry)
-async def detail(request: Request, _identity: CurrentIdentity, accession: Annotated[str, Path(pattern=f"^{ACCESSION_PATTERN}$")]):
-    payload = await retrieve(request, f"{accession}.json")
+async def fetch_entry(context: ServiceContext, accession: str) -> UniProtEntry:
+    if not re.fullmatch(ACCESSION_PATTERN, accession):
+        raise HTTPException(422, "uniprot-accession")
+    payload = await retrieve(context, f"{accession}.json")
     try:
         result = entry(payload)
         if result.accession != accession:
@@ -123,3 +126,14 @@ async def detail(request: Request, _identity: CurrentIdentity, accession: Annota
         return result
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         raise HTTPException(502, "uniprot-invalid-response") from error
+
+
+@router.get("/search", response_model=SearchResult)
+async def search(request: Request, _identity: CurrentIdentity, query: str = Query(min_length=MIN_QUERY_LENGTH, max_length=MAX_QUERY_LENGTH)):
+    return await search_entries(context_of(request), query)
+
+
+@router.get("/{accession}", response_model=UniProtEntry)
+async def detail(request: Request, _identity: CurrentIdentity, accession: Annotated[str, Path(pattern=f"^{ACCESSION_PATTERN}$")]):
+    return await fetch_entry(context_of(request), accession)
+

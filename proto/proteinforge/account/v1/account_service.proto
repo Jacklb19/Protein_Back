@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package proteinforge.account.v1;
+
+// Service status and the identity behind a session.
+//
+// Authentication: requests carry the Supabase access token in the `Authorization: Bearer <token>`
+// header (gRPC metadata). The API validates it against Supabase Auth; no secret is stored locally.
+// Equivalent REST routes: GET /v1/health and GET /v1/me.
+service AccountService {
+  // Public. Whether the process answers and identity validation is configured.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Identity of the token bearer. UNAUTHENTICATED without a valid token;
+  // UNAVAILABLE when Supabase Auth does not answer.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  // "ok" while the process answers requests.
+  string status = 1;
+  // API version, for example "0.1.0".
+  string version = 2;
+  // True when identity validation is configured.
+  bool identity_configured = 3;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  // Supabase user id; equals profiles.id.
+  string id = 1;
+  string email = 2;
+}

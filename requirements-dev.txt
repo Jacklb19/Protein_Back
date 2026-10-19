@@ -1,0 +1,5 @@
+# Code generation and local HTTP/2 (native gRPC) testing; not needed to run the API.
+-r requirements.txt
+protoc-gen-py==0.6.0
+protoc-gen-connectrpc==0.12.1
+hypercorn==0.18.0

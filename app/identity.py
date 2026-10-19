@@ -21,11 +21,15 @@ class Identity:
     email: str
 
 
-def bearer_token(request: Request) -> str:
-    header = request.headers.get("Authorization", "")
+def token_from_header(header: str) -> str:
+    """The bearer token of an Authorization header; 401 when it is missing or malformed."""
     if not header.lower().startswith(BEARER_PREFIX) or not header[len(BEARER_PREFIX):].strip():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing-token", headers={"WWW-Authenticate": "Bearer"})
     return header[len(BEARER_PREFIX):].strip()
+
+
+def bearer_token(request: Request) -> str:
+    return token_from_header(request.headers.get("Authorization", ""))
 
 
 async def resolve_identity(settings: Settings, client: httpx.AsyncClient, token: str) -> Identity:

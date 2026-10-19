@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ValidationError, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
+from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
+
+logger = logging.getLogger(__name__)
 
 MAX_SEQUENCE_LENGTH = 100_000
 MAX_ALIGNMENT_LENGTH = 5_000
 DEFAULT_PAGE_SIZE = 30
 MAX_PAGE_SIZE = 100
+MAX_OFFSET = 100_000
 DATA_TIMEOUT_SECONDS = 10.0
 Sequence = Annotated[str, StringConstraints(max_length=MAX_SEQUENCE_LENGTH, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")]
 AlignmentSequence = Annotated[str, StringConstraints(max_length=MAX_ALIGNMENT_LENGTH, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")]
@@ -178,11 +183,11 @@ class ProjectList(Contract):
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def data_request(request: Request, token: str, method: str, path: str, **kwargs):
-    settings = request.app.state.settings
+async def data_request(context: ServiceContext, token: str, method: str, path: str, **kwargs):
+    settings = context.settings
     headers = {"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
-        response = await request.app.state.http_client.request(method, f"{settings.supabase_url}/rest/v1/{path}", headers=headers, timeout=DATA_TIMEOUT_SECONDS, **kwargs)
+        response = await context.http_client.request(method, f"{settings.supabase_url}/rest/v1/{path}", headers=headers, timeout=DATA_TIMEOUT_SECONDS, **kwargs)
     except httpx.TimeoutException as error:
         raise HTTPException(504, "projects-timeout") from error
     except httpx.HTTPError as error:
@@ -202,6 +207,8 @@ async def data_request(request: Request, token: str, method: str, path: str, **k
             raise HTTPException(404, "project-not-found")
         if response.status_code == 403:
             raise HTTPException(403, "project-forbidden")
+        # Status and error code only: provider messages can quote submitted values.
+        logger.warning("Supabase data request failed: %s %s -> %s %s", method, path.split("?")[0], response.status_code, code or "no-code")
         raise HTTPException(502, "projects-provider-error")
     try:
         return response.json()
@@ -214,14 +221,18 @@ def document(value) -> Project:
         raise HTTPException(404, "project-not-found")
     try:
         return Project.model_validate(value)
+    except ValidationError as error:
+        # Field paths only, never the stored values.
+        logger.warning("Stored project does not match the contract: %s", sorted({".".join(map(str, item["loc"])) for item in error.errors()}))
+        raise HTTPException(502, "projects-invalid-response") from error
     except ValueError as error:
         raise HTTPException(502, "projects-invalid-response") from error
 
 
-@router.get("", response_model=ProjectList)
-async def list_projects(request: Request, identity: CurrentIdentity, token: Token, limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE), offset: int = Query(0, ge=0, le=100_000)):
-    rows = await data_request(request, token, "GET", "projects", params={
-        "owner_id": f"eq.{identity.id}", "select": "id,name,status,created_at,updated_at", "order": "updated_at.desc,id.desc", "limit": limit + 1, "offset": offset,
+async def fetch_projects(context: ServiceContext, owner_id: str, token: str, limit: int, offset: int) -> ProjectList:
+    """Owned project summaries, most recently updated first; `limit + 1` rows tell whether more remain."""
+    rows = await data_request(context, token, "GET", "projects", params={
+        "owner_id": f"eq.{owner_id}", "select": "id,name,status,created_at,updated_at", "order": "updated_at.desc,id.desc", "limit": limit + 1, "offset": offset,
     })
     try:
         if not isinstance(rows, list):
@@ -232,13 +243,28 @@ async def list_projects(request: Request, identity: CurrentIdentity, token: Toke
     return ProjectList(items=items, next_offset=offset + limit if len(rows) > limit else None)
 
 
+async def fetch_project(context: ServiceContext, token: str, project_id: UUID) -> Project:
+    return document(await data_request(context, token, "POST", "rpc/pf_project_document", json={"p_id": str(project_id)}))
+
+
+async def remove_project(context: ServiceContext, token: str, project_id: UUID, expected: datetime) -> None:
+    if expected.tzinfo is None:
+        raise HTTPException(422, "validation")
+    await data_request(context, token, "POST", "rpc/pf_delete_project", json={"p_id": str(project_id), "p_expected_updated_at": expected.isoformat()})
+
+
+@router.get("", response_model=ProjectList)
+async def list_projects(request: Request, identity: CurrentIdentity, token: Token, limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE), offset: int = Query(0, ge=0, le=MAX_OFFSET)):
+    return await fetch_projects(context_of(request), identity.id, token, limit, offset)
+
+
 @router.get("/{project_id}", response_model=Project)
 async def get_project(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token):
-    return document(await data_request(request, token, "POST", "rpc/pf_project_document", json={"p_id": str(project_id)}))
+    return await fetch_project(context_of(request), token, project_id)
 
 
-async def save_project(request: Request, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None) -> Project:
-    return document(await data_request(request, token, "POST", "rpc/pf_save_project", json={
+async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None) -> Project:
+    return document(await data_request(context, token, "POST", "rpc/pf_save_project", json={
         "p_id": str(project_id) if project_id else None,
         "p_name": payload.name,
         "p_sequence": payload.active_sequence,
@@ -249,17 +275,15 @@ async def save_project(request: Request, token: str, payload: ProjectWrite, proj
 
 @router.post("", response_model=Project, status_code=201)
 async def create_project(payload: ProjectWrite, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(request, token, payload)
+    return await save_project(context_of(request), token, payload)
 
 
 @router.put("/{project_id}", response_model=Project)
 async def update_project(project_id: UUID, payload: ProjectUpdate, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(request, token, payload, project_id, payload.expected_updated_at)
+    return await save_project(context_of(request), token, payload, project_id, payload.expected_updated_at)
 
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token, expected_updated_at: Annotated[datetime, Query(alias="expectedUpdatedAt")]):
-    if expected_updated_at.tzinfo is None:
-        raise HTTPException(422, "validation")
-    await data_request(request, token, "POST", "rpc/pf_delete_project", json={"p_id": str(project_id), "p_expected_updated_at": expected_updated_at.isoformat()})
+    await remove_project(context_of(request), token, project_id, expected_updated_at)
     return Response(status_code=204)

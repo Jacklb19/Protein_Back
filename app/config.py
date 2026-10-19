@@ -11,6 +11,10 @@ from dotenv import dotenv_values
 API_PREFIX = "/v1"
 SUPABASE_AUTH_PATH = "/auth/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
+
+# Request headers that browsers send for Connect and gRPC-Web calls, and gRPC status headers they must read.
+RPC_REQUEST_HEADERS = ("Connect-Protocol-Version", "Connect-Timeout-Ms", "Grpc-Timeout", "X-Grpc-Web", "X-User-Agent")
+RPC_RESPONSE_HEADERS = ("Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin")
 DEFAULT_IDENTITY_TIMEOUT_SECONDS = 5.0
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
