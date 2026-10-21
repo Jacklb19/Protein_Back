@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Laboratorio en Proyectos — 21 oct 2026
+
+Workspace acepta schemaVersion 1 (anterior) y 2 con laboratory={schemaVersion:1,documentJson,documentSha256}. Documento portable proteinforge-laboratory v1, hasta 1.000.000 bytes UTF-8, tres variantes/120 residuos; hash exacto, fuente y borradores validados sin descomprimir ZIP ni ejecutar ciencia. La secuencia activa coherente pertenece al state del laboratorio; activeSequence del proyecto sigue siendo el documento independiente del editor de análisis. REST y gRPC-Web usan la misma validación. Preview añade hasLaboratory/laboratoryVariants sin documento; protobuf añade Workspace.laboratory=6 y preview campos 7/8 sin renumerar. Mensaje RPC completo máximo 2.000.000 bytes, sin ampliar el límite. SQL rechaza v1 sobre un snapshot v2 con PT409/ABORTED; PT422 se traduce a validación. Nueva migración 20261021000000_laboratory_projects.sql comprobada solo en PostgreSQL 18 local. No publicada ni aplicada remotamente.
+
 Actualizado el 19 de octubre de 2026. OpenAPI generado por FastAPI (`/docs` y `/openapi.json` en local) es la referencia ejecutable de REST. CRUD/gRPC-Web publicados previamente. Esta entrega añade vistas previas y consulta global; requiere la nueva migración antes de publicar el backend.
 
 ## Implementado

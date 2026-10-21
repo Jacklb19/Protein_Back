@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
+from .laboratory import LaboratorySnapshot
 from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
 
 logger = logging.getLogger(__name__)
@@ -120,11 +121,18 @@ class SequenceSource(Contract):
 
 
 class Workspace(Contract):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     profile_window: Literal[9, 19] = 9
     source: SequenceSource | None = None
     descriptors: DescriptorSnapshot | None = None
     alignment: AlignmentSnapshot = Field(default_factory=AlignmentSnapshot)
+    laboratory: LaboratorySnapshot | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def validate_version(self):
+        if (self.schema_version == 2) != (self.laboratory is not None):
+            raise ValueError("Laboratory requires workspace version 2")
+        return self
 
 
 class ProjectWrite(Contract):
@@ -142,6 +150,8 @@ class ProjectWrite(Contract):
 
     @model_validator(mode="after")
     def validate_descriptors(self):
+        if len(self.model_dump_json(by_alias=True).encode("utf-8")) > 2_000_000:
+            raise ValueError("Project size")
         snapshot = self.workspace.descriptors
         if self.workspace.source and self.workspace.source.sequence != self.active_sequence:
             raise ValueError("Stale source")
@@ -201,6 +211,8 @@ class ProjectAlignmentPreview(Contract):
 
 
 class ProjectPreview(Contract):
+    has_laboratory: bool = False
+    laboratory_variants: int = Field(default=0, ge=0, le=3)
     sequence_length: int = Field(ge=0, le=MAX_SEQUENCE_LENGTH)
     sequence_prefix: str = Field(max_length=PROJECT_PREVIEW_RESIDUES, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")
     excluded: int = Field(ge=0)
@@ -210,6 +222,8 @@ class ProjectPreview(Contract):
 
     @model_validator(mode="after")
     def validate_lengths(self):
+        if self.has_laboratory != (self.laboratory_variants > 0):
+            raise ValueError("Invalid laboratory preview")
         if len(self.sequence_prefix) != min(self.sequence_length, PROJECT_PREVIEW_RESIDUES) or self.excluded > self.sequence_length:
             raise ValueError("Invalid preview length")
         if self.descriptors and self.descriptors.length + self.excluded != self.sequence_length:
@@ -259,6 +273,8 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
             raise HTTPException(503, "projects-schema-unavailable")
         if code == "PT409":
             raise HTTPException(409, "project-conflict")
+        if code == "PT422":
+            raise HTTPException(422, "validation")
         if code == "PT404":
             raise HTTPException(404, "project-not-found")
         if response.status_code == 403:

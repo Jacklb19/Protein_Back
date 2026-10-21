@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Activación remota de persistencia y proveedores externos pendientes.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. CRUD de Proyectos ya publicado; guardado de laboratorio implementado y verificado localmente, con su nueva migración y publicación todavía pendientes. Proveedores de inferencia no integrados.
 
 ## Organización
 

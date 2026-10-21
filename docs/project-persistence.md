@@ -1,5 +1,13 @@
 # Proyectos: contrato, pruebas y activación
 
+## Laboratorio aprobado e implementado localmente — 21 oct 2026
+
+Se conserva analyses.type=workspace-v1 como clave estable de almacenamiento; results y parameters registran schemaVersion 2 si llevan laboratorio. No hay tablas nuevas, Storage ni modelos en FastAPI. Sobre JSON/SHA-256 de hasta 1.000.000 bytes; fuente Base64 se comprueba sin descomprimir, estado tiene 1–3 borradores de 3–120 residuos, posiciones únicas y selección activa válida. Los datos científicos completos se revalidan en Worker al guardar y abrir. El editor de análisis y el laboratorio tienen vínculos independientes: cambiar de herramienta no reemplaza el otro borrador; conservar laboratory en actualizaciones de análisis evita pérdida. El campo activeSequence de análisis no se fuerza a coincidir con el borrador activo del laboratorio. La guardia de versión se comprueba bajo bloqueo antes de escribir; una actualización v1 de un proyecto v2 falla sin modificar nombre/timestamp/snapshot.
+
+Migración nueva idempotente: [20261021000000_laboratory_projects.sql](../supabase/migrations/20261021000000_laboratory_projects.sql). Solo se ejecutó en PostgreSQL temporal localhost, con 12 pruebas reales: RLS/dos propietarios/anon, copia/rename/delete, tamaños/hash, rollback y carrera de versiones, más repetición de migración. API: 43 pruebas ejecutadas, 12 SQL omitidas en la batería sin base (se ejecutan aparte). No certifica Auth/PostgREST remoto.
+
+Activación posterior, previa autorización específica: aplicar únicamente la migración nueva en la base ya migrada; publicar backend antes de frontend para que la referencia protobuf esté disponible; comprobar cuenta real, dos propietarios y dos pestañas. No repetir migraciones iniciales. Esta entrega no autoriza ni realiza esos pasos remotos.
+
 19 oct 2026: CRUD/gRPC-Web publicados y migraciones originales aplicadas por el propietario. La prueba del propietario confirma CRUD y correo de confirmación. La nueva sección Proyectos requiere una migración adicional, preparada y probada únicamente en PostgreSQL local.
 
 ## Contrato

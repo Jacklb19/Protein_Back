@@ -140,3 +140,49 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(self.listing()[0]["id"], self.id)
         for args in ["0,0,'','recent',40", "1,0,'','unknown',40", "1,0,'','recent',41", "1,-1,'','recent',40"]:
             self.assertNotEqual(self.sql(f"select * from public.pf_list_projects({args});", self.owner, check=False).returncode, 0)
+
+    def lab_snapshot(self):
+        from test_laboratory import envelope
+        workspace=json.loads(self.snapshot)
+        workspace.update(schemaVersion=2,laboratory=envelope())
+        return json.dumps(workspace)
+
+    def test_laboratory_round_trip_rename_copy_rls_and_compact_listing(self):
+        snapshot=self.lab_snapshot()
+        saved=json.loads(self.sql(f"select public.pf_save_project('{self.id}','Laboratory','ACD','{snapshot}','{self.version}');",self.owner).stdout)
+        opened=json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout)
+        self.assertEqual(opened['workspace']['laboratory'],json.loads(snapshot)['laboratory'])
+        preview=self.listing()[0]['preview']
+        self.assertTrue(preview['hasLaboratory']);self.assertEqual(preview['laboratoryVariants'],1)
+        self.assertNotIn('documentJson',json.dumps(self.listing()))
+        self.assertEqual(self.listing(user=self.other),[])
+        self.assertEqual(self.sql(f"select public.pf_project_document('{self.id}') is null;",self.other).stdout.strip(),'t')
+        denied=self.sql(f"select public.pf_save_project('{self.id}','Stolen','ACD','{snapshot}','{saved['updatedAt']}');",self.other,check=False)
+        self.assertIn('Project not found',denied.stderr)
+        renamed=json.loads(self.sql(f"select public.pf_save_project('{self.id}','Renamed','ACD','{snapshot}','{saved['updatedAt']}');",self.owner).stdout)
+        copied=json.loads(self.sql(f"select public.pf_save_project(null,'Copy','ACD','{snapshot}',null);",self.owner).stdout)
+        self.assertNotEqual(copied['id'],self.id)
+        self.sql(f"select public.pf_delete_project('{self.id}','{renamed['updatedAt']}');",self.owner)
+        copy=json.loads(self.sql(f"select public.pf_project_document('{copied['id']}');",self.owner).stdout)
+        self.assertEqual(copy['workspace'],json.loads(snapshot))
+
+    def test_laboratory_rejects_old_clients_without_partial_name_or_timestamp_write(self):
+        snapshot=self.lab_snapshot()
+        saved=json.loads(self.sql(f"select public.pf_save_project('{self.id}','Laboratory','ACD','{snapshot}','{self.version}');",self.owner).stdout)
+        denied=self.sql(f"select public.pf_save_project('{self.id}','Lost','AAA','{self.snapshot}','{saved['updatedAt']}');",self.owner,check=False)
+        self.assertIn('Project requires current client',denied.stderr)
+        unchanged=json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout)
+        self.assertEqual(unchanged,saved)
+        stale=self.sql(f"select public.pf_save_project('{self.id}','Lost','ACD','{snapshot}','{self.version}');",self.owner,check=False)
+        self.assertIn('Project changed',stale.stderr)
+
+    def test_laboratory_sql_validation_size_hash_and_migration_idempotence(self):
+        migration=Path(__file__).resolve().parents[1]/'supabase/migrations/20261021000000_laboratory_projects.sql'
+        self.sql(migration.read_text(encoding='utf-8'));self.sql(migration.read_text(encoding='utf-8'))
+        snapshot=json.loads(self.lab_snapshot());snapshot['laboratory']['documentSha256']='0'*64
+        denied=self.sql(f"select public.pf_save_project('{self.id}','Invalid','ACD','{json.dumps(snapshot)}','{self.version}');",self.owner,check=False)
+        self.assertIn('Invalid laboratory',denied.stderr)
+        # Construct over-limit text inside PostgreSQL, keeping the shell argument bounded.
+        too_large=self.sql("select public.pf_save_project(null,'Too large','ACD',jsonb_build_object('schemaVersion',2,'laboratory',jsonb_build_object('schemaVersion',1,'documentJson',repeat(' ',1000001),'documentSha256','bad')),null);",self.owner,check=False)
+        self.assertIn('Invalid laboratory',too_large.stderr)
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout),self.project)
