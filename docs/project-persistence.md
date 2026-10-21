@@ -6,7 +6,7 @@ Se conserva analyses.type=workspace-v1 como clave estable de almacenamiento; res
 
 Migración nueva idempotente: [20261021000000_laboratory_projects.sql](../supabase/migrations/20261021000000_laboratory_projects.sql). Solo se ejecutó en PostgreSQL temporal localhost, con 12 pruebas reales: RLS/dos propietarios/anon, copia/rename/delete, tamaños/hash, rollback y carrera de versiones, más repetición de migración. API: 43 pruebas ejecutadas, 12 SQL omitidas en la batería sin base (se ejecutan aparte). No certifica Auth/PostgREST remoto.
 
-Activación posterior, previa autorización específica: aplicar únicamente la migración nueva en la base ya migrada; publicar backend antes de frontend para que la referencia protobuf esté disponible; comprobar cuenta real, dos propietarios y dos pestañas. No repetir migraciones iniciales. Esta entrega no autoriza ni realiza esos pasos remotos.
+Confirmación posterior del propietario, 21 oct: ya aplicó la migración nueva. Es evidencia declarada, sin inspección remota; no volver a ejecutarla. Pendiente, previa autorización específica: publicar backend antes de frontend para que la referencia protobuf esté disponible; comprobar cuenta real, dos propietarios y dos pestañas. No repetir migraciones iniciales. Esta entrega no autoriza ni realiza esos pasos remotos.
 
 19 oct 2026: CRUD/gRPC-Web publicados y migraciones originales aplicadas por el propietario. La prueba del propietario confirma CRUD y correo de confirmación. La nueva sección Proyectos requiere una migración adicional, preparada y probada únicamente en PostgreSQL local.
 
