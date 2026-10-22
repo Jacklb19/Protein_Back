@@ -6,12 +6,12 @@ import "google/protobuf/timestamp.proto";
 
 // Snapshot of the work a project keeps: the active sequence's provenance, its calculated
 // descriptors and the current comparison. Mirrors the validated JSON workspace of
-// app/projects.py (schemaVersion 1). Results are stored only when they match their inputs;
+// app/projects.py (schemaVersion 1 or 2). Results are stored only when they match their inputs;
 // the API rejects stale or inconsistent snapshots with INVALID_ARGUMENT.
 //
 // Alphabet: sequences use the 20 standard residues plus U, O, B, Z and X, uppercase.
 message Workspace {
-  // Always 1 for this contract.
+  // 1 for legacy snapshots; 2 when laboratory is present.
   int32 schema_version = 1;
   // Hydropathy window in residues: 9 or 19.
   int32 profile_window = 2;
@@ -20,6 +20,17 @@ message Workspace {
   // Present only when calculated for the current active sequence.
   DescriptorSnapshot descriptors = 4;
   AlignmentSnapshot alignment = 5;
+  LaboratorySnapshot laboratory = 6;
+}
+
+// Portable proteinforge-laboratory v1 JSON. Revalidated scientifically in a browser Worker.
+message LaboratorySnapshot {
+  // Always 1 for the envelope.
+  int32 schema_version = 1;
+  // At most 1,000,000 UTF-8 bytes; includes source and all drafts, no executable content.
+  string document_json = 2;
+  // Lowercase SHA-256 of the exact UTF-8 document_json bytes.
+  string document_sha256 = 3;
 }
 
 // Where a reference sequence came from. Any manual edit removes it.

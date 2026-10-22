@@ -17,13 +17,13 @@ if TYPE_CHECKING:
     from protobuf.wkt.google.protobuf.timestamp_pb import Timestamp
 
 
-_WorkspaceFields: TypeAlias = Literal["schema_version", "profile_window", "source", "descriptors", "alignment"]
+_WorkspaceFields: TypeAlias = Literal["schema_version", "profile_window", "source", "descriptors", "alignment", "laboratory"]
 
 class Workspace(Message[_WorkspaceFields]):
     """
     Snapshot of the work a project keeps: the active sequence's provenance, its calculated
     descriptors and the current comparison. Mirrors the validated JSON workspace of
-    app/projects.py (schemaVersion 1). Results are stored only when they match their inputs;
+    app/projects.py (schemaVersion 1 or 2). Results are stored only when they match their inputs;
     the API rejects stale or inconsistent snapshots with INVALID_ARGUMENT.
 
     Alphabet: sequences use the 20 standard residues plus U, O, B, Z and X, uppercase.
@@ -34,7 +34,7 @@ class Workspace(Message[_WorkspaceFields]):
 
     Attributes:
         schema_version:
-            Always 1 for this contract.
+            1 for legacy snapshots; 2 when laboratory is present.
 
             ```proto
             int32 schema_version = 1;
@@ -61,9 +61,13 @@ class Workspace(Message[_WorkspaceFields]):
             ```proto
             optional proteinforge.project.v1.AlignmentSnapshot alignment = 5;
             ```
+        laboratory:
+            ```proto
+            optional proteinforge.project.v1.LaboratorySnapshot laboratory = 6;
+            ```
     """
 
-    __slots__ = ("schema_version", "profile_window", "source", "descriptors", "alignment")
+    __slots__ = ("schema_version", "profile_window", "source", "descriptors", "alignment", "laboratory")
 
     if TYPE_CHECKING:
 
@@ -75,6 +79,7 @@ class Workspace(Message[_WorkspaceFields]):
             source: SequenceSource | None = None,
             descriptors: DescriptorSnapshot | None = None,
             alignment: AlignmentSnapshot | None = None,
+            laboratory: LaboratorySnapshot | None = None,
         ) -> None:
             pass
 
@@ -83,6 +88,55 @@ class Workspace(Message[_WorkspaceFields]):
         source: SequenceSource | None
         descriptors: DescriptorSnapshot | None
         alignment: AlignmentSnapshot | None
+        laboratory: LaboratorySnapshot | None
+
+_LaboratorySnapshotFields: TypeAlias = Literal["schema_version", "document_json", "document_sha256"]
+
+class LaboratorySnapshot(Message[_LaboratorySnapshotFields]):
+    """
+    Portable proteinforge-laboratory v1 JSON. Revalidated scientifically in a browser Worker.
+
+    ```proto
+    message proteinforge.project.v1.LaboratorySnapshot
+    ```
+
+    Attributes:
+        schema_version:
+            Always 1 for the envelope.
+
+            ```proto
+            int32 schema_version = 1;
+            ```
+        document_json:
+            At most 1,000,000 UTF-8 bytes; includes source and all drafts, no executable content.
+
+            ```proto
+            string document_json = 2;
+            ```
+        document_sha256:
+            Lowercase SHA-256 of the exact UTF-8 document_json bytes.
+
+            ```proto
+            string document_sha256 = 3;
+            ```
+    """
+
+    __slots__ = ("schema_version", "document_json", "document_sha256")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            schema_version: int = 0,
+            document_json: str = "",
+            document_sha256: str = "",
+        ) -> None:
+            pass
+
+        schema_version: int
+        document_json: str
+        document_sha256: str
 
 _SequenceSourceFields: TypeAlias = Literal["origin", "accession", "sequence", "entry_version", "sequence_version", "retrieve_time"]
 
@@ -583,12 +637,13 @@ class TerminalGaps(Enum):
 
 
 _DESC = file_desc(
-    b'\n\'proteinforge/project/v1/workspace.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto"\xb3\x02\n\tWorkspace\x12%\n\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x12%\n\x0eprofile_window\x18\x02 \x01(\x05R\rprofileWindow\x12?\n\x06source\x18\x03 \x01(\x0b2\'.proteinforge.project.v1.SequenceSourceR\x06source\x12M\n\x0bdescriptors\x18\x04 \x01(\x0b2+.proteinforge.project.v1.DescriptorSnapshotR\x0bdescriptors\x12H\n\talignment\x18\x05 \x01(\x0b2*.proteinforge.project.v1.AlignmentSnapshotR\talignment"\xcb\x02\n\x0eSequenceSource\x12=\n\x06origin\x18\x01 \x01(\x0e2%.proteinforge.project.v1.SourceOriginR\x06origin\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession\x12\x1a\n\x08sequence\x18\x03 \x01(\tR\x08sequence\x12(\n\rentry_version\x18\x04 \x01(\x05H\x00R\x0centryVersion\x88\x01\x01\x12.\n\x10sequence_version\x18\x05 \x01(\x05H\x01R\x0fsequenceVersion\x88\x01\x01\x12?\n\rretrieve_time\x18\x06 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTimeB\x10\n\x0e_entry_versionB\x13\n\x11_sequence_version"\xb6\x01\n\x12DescriptorSnapshot\x12\x1a\n\x08sequence\x18\x01 \x01(\tR\x08sequence\x12\x1a\n\x08excluded\x18\x02 \x01(\x05R\x08excluded\x12%\n\x0emethod_version\x18\x03 \x01(\tR\rmethodVersion\x12A\n\x06result\x18\x04 \x01(\x0b2).proteinforge.project.v1.DescriptorResultR\x06result"\xdc\x01\n\x10DescriptorResult\x12\x17\n\x07mass_da\x18\x01 \x01(\x01R\x06massDa\x12+\n\x11isoelectric_point\x18\x02 \x01(\x01R\x10isoelectricPoint\x12+\n\x11instability_index\x18\x03 \x01(\x01R\x10instabilityIndex\x12\'\n\x0faliphatic_index\x18\x04 \x01(\x01R\x0ealiphaticIndex\x12\x14\n\x05gravy\x18\x05 \x01(\x01R\x05gravy\x12\x16\n\x06length\x18\x06 \x01(\x05R\x06length"\x84\x02\n\x11AlignmentSnapshot\x12\x14\n\x05first\x18\x01 \x01(\tR\x05first\x12\x16\n\x06second\x18\x02 \x01(\tR\x06second\x12C\n\x06matrix\x18\x03 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x04 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12@\n\x06result\x18\x05 \x01(\x0b2(.proteinforge.project.v1.AlignmentResultR\x06result"\xb5\x02\n\x0fAlignmentResult\x12#\n\raligned_first\x18\x01 \x01(\tR\x0calignedFirst\x12%\n\x0ealigned_second\x18\x02 \x01(\tR\ralignedSecond\x12\x14\n\x05marks\x18\x03 \x01(\tR\x05marks\x12\x14\n\x05score\x18\x04 \x01(\x01R\x05score\x12\x1e\n\nidentities\x18\x05 \x01(\x05R\nidentities\x12"\n\x0csimilarities\x18\x06 \x01(\x05R\x0csimilarities\x12\x18\n\x07columns\x18\x07 \x01(\x05R\x07columns\x12L\n\nparameters\x18\x08 \x01(\x0b2,.proteinforge.project.v1.AlignmentParametersR\nparameters"\x9c\x02\n\x13AlignmentParameters\x12C\n\x06matrix\x18\x01 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x02 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12\x19\n\x08gap_open\x18\x03 \x01(\x01R\x07gapOpen\x12\x1d\n\ngap_extend\x18\x04 \x01(\x01R\tgapExtend\x12J\n\rterminal_gaps\x18\x05 \x01(\x0e2%.proteinforge.project.v1.TerminalGapsR\x0cterminalGaps*c\n\x0cSourceOrigin\x12\x1d\n\x19SOURCE_ORIGIN_UNSPECIFIED\x10\x00\x12\x19\n\x15SOURCE_ORIGIN_CATALOG\x10\x01\x12\x19\n\x15SOURCE_ORIGIN_UNIPROT\x10\x02*\x9f\x01\n\x12SubstitutionMatrix\x12#\n\x1fSUBSTITUTION_MATRIX_UNSPECIFIED\x10\x00\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM45\x10\x01\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM62\x10\x02\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM80\x10\x03*d\n\rAlignmentMode\x12\x1e\n\x1aALIGNMENT_MODE_UNSPECIFIED\x10\x00\x12\x19\n\x15ALIGNMENT_MODE_GLOBAL\x10\x01\x12\x18\n\x14ALIGNMENT_MODE_LOCAL\x10\x02*g\n\x0cTerminalGaps\x12\x1d\n\x19TERMINAL_GAPS_UNSPECIFIED\x10\x00\x12\x16\n\x12TERMINAL_GAPS_FREE\x10\x01\x12 \n\x1cTERMINAL_GAPS_NOT_APPLICABLE\x10\x02b\x06proto3',
+    b'\n\'proteinforge/project/v1/workspace.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto"\x80\x03\n\tWorkspace\x12%\n\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x12%\n\x0eprofile_window\x18\x02 \x01(\x05R\rprofileWindow\x12?\n\x06source\x18\x03 \x01(\x0b2\'.proteinforge.project.v1.SequenceSourceR\x06source\x12M\n\x0bdescriptors\x18\x04 \x01(\x0b2+.proteinforge.project.v1.DescriptorSnapshotR\x0bdescriptors\x12H\n\talignment\x18\x05 \x01(\x0b2*.proteinforge.project.v1.AlignmentSnapshotR\talignment\x12K\n\nlaboratory\x18\x06 \x01(\x0b2+.proteinforge.project.v1.LaboratorySnapshotR\nlaboratory"\x89\x01\n\x12LaboratorySnapshot\x12%\n\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x12#\n\rdocument_json\x18\x02 \x01(\tR\x0cdocumentJson\x12\'\n\x0fdocument_sha256\x18\x03 \x01(\tR\x0edocumentSha256"\xcb\x02\n\x0eSequenceSource\x12=\n\x06origin\x18\x01 \x01(\x0e2%.proteinforge.project.v1.SourceOriginR\x06origin\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession\x12\x1a\n\x08sequence\x18\x03 \x01(\tR\x08sequence\x12(\n\rentry_version\x18\x04 \x01(\x05H\x00R\x0centryVersion\x88\x01\x01\x12.\n\x10sequence_version\x18\x05 \x01(\x05H\x01R\x0fsequenceVersion\x88\x01\x01\x12?\n\rretrieve_time\x18\x06 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTimeB\x10\n\x0e_entry_versionB\x13\n\x11_sequence_version"\xb6\x01\n\x12DescriptorSnapshot\x12\x1a\n\x08sequence\x18\x01 \x01(\tR\x08sequence\x12\x1a\n\x08excluded\x18\x02 \x01(\x05R\x08excluded\x12%\n\x0emethod_version\x18\x03 \x01(\tR\rmethodVersion\x12A\n\x06result\x18\x04 \x01(\x0b2).proteinforge.project.v1.DescriptorResultR\x06result"\xdc\x01\n\x10DescriptorResult\x12\x17\n\x07mass_da\x18\x01 \x01(\x01R\x06massDa\x12+\n\x11isoelectric_point\x18\x02 \x01(\x01R\x10isoelectricPoint\x12+\n\x11instability_index\x18\x03 \x01(\x01R\x10instabilityIndex\x12\'\n\x0faliphatic_index\x18\x04 \x01(\x01R\x0ealiphaticIndex\x12\x14\n\x05gravy\x18\x05 \x01(\x01R\x05gravy\x12\x16\n\x06length\x18\x06 \x01(\x05R\x06length"\x84\x02\n\x11AlignmentSnapshot\x12\x14\n\x05first\x18\x01 \x01(\tR\x05first\x12\x16\n\x06second\x18\x02 \x01(\tR\x06second\x12C\n\x06matrix\x18\x03 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x04 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12@\n\x06result\x18\x05 \x01(\x0b2(.proteinforge.project.v1.AlignmentResultR\x06result"\xb5\x02\n\x0fAlignmentResult\x12#\n\raligned_first\x18\x01 \x01(\tR\x0calignedFirst\x12%\n\x0ealigned_second\x18\x02 \x01(\tR\ralignedSecond\x12\x14\n\x05marks\x18\x03 \x01(\tR\x05marks\x12\x14\n\x05score\x18\x04 \x01(\x01R\x05score\x12\x1e\n\nidentities\x18\x05 \x01(\x05R\nidentities\x12"\n\x0csimilarities\x18\x06 \x01(\x05R\x0csimilarities\x12\x18\n\x07columns\x18\x07 \x01(\x05R\x07columns\x12L\n\nparameters\x18\x08 \x01(\x0b2,.proteinforge.project.v1.AlignmentParametersR\nparameters"\x9c\x02\n\x13AlignmentParameters\x12C\n\x06matrix\x18\x01 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x02 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12\x19\n\x08gap_open\x18\x03 \x01(\x01R\x07gapOpen\x12\x1d\n\ngap_extend\x18\x04 \x01(\x01R\tgapExtend\x12J\n\rterminal_gaps\x18\x05 \x01(\x0e2%.proteinforge.project.v1.TerminalGapsR\x0cterminalGaps*c\n\x0cSourceOrigin\x12\x1d\n\x19SOURCE_ORIGIN_UNSPECIFIED\x10\x00\x12\x19\n\x15SOURCE_ORIGIN_CATALOG\x10\x01\x12\x19\n\x15SOURCE_ORIGIN_UNIPROT\x10\x02*\x9f\x01\n\x12SubstitutionMatrix\x12#\n\x1fSUBSTITUTION_MATRIX_UNSPECIFIED\x10\x00\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM45\x10\x01\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM62\x10\x02\x12 \n\x1cSUBSTITUTION_MATRIX_BLOSUM80\x10\x03*d\n\rAlignmentMode\x12\x1e\n\x1aALIGNMENT_MODE_UNSPECIFIED\x10\x00\x12\x19\n\x15ALIGNMENT_MODE_GLOBAL\x10\x01\x12\x18\n\x14ALIGNMENT_MODE_LOCAL\x10\x02*g\n\x0cTerminalGaps\x12\x1d\n\x19TERMINAL_GAPS_UNSPECIFIED\x10\x00\x12\x16\n\x12TERMINAL_GAPS_FREE\x10\x01\x12 \n\x1cTERMINAL_GAPS_NOT_APPLICABLE\x10\x02b\x06proto3',
     [
         timestamp_pb.desc(),
     ],
     {
         "Workspace": Workspace,
+        "LaboratorySnapshot": LaboratorySnapshot,
         "SequenceSource": SequenceSource,
         "DescriptorSnapshot": DescriptorSnapshot,
         "DescriptorResult": DescriptorResult,

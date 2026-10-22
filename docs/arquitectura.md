@@ -1,8 +1,12 @@
 # Arquitectura del backend
 
+## Persistencia del laboratorio — 21 oct 2026
+
+Contrato aprobado e implementado localmente dentro del snapshot existente en analyses. Workspace v2 conserva un sobre del archivo portable con SHA-256, limitado a 1.000.000 bytes; el backend valida forma, fuente y borradores, sin descomprimir ZIP ni recalcular ciencia. El navegador revalida en Worker. Preview solo añade presencia/cantidad. RLS, SECURITY INVOKER y concurrencia existentes conservados; cliente antiguo v1 no puede sustituir v2. Ver [contrato y activación pendiente](project-persistence.md). El propietario confirmó aplicar la migración el 21 oct, sin inspección remota de nuestra parte; no repetirla. Código nuevo todavía local, publicación pendiente de autorización específica.
+
 ## Estado
 
-API local: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problemas RFC 9457. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Nueva migración transacciones/versiones/grants/índices sin nuevas tablas. RLS/concurrencia PostgreSQL 18 comprobados; migración/publicación y sesión Supabase real pendientes. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md).
+API: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problemas RFC 9457 ya publicados en la entrega anterior. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Persistencia nueva del laboratorio local y migración aplicada según el propietario. RLS/concurrencia PostgreSQL 18 comprobados localmente; publicación del laboratorio y recorrido con sesión Supabase real todavía pendientes. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md).
 
 ## Responsabilidades
 

@@ -60,6 +60,9 @@ message ProjectPreview {
   ProjectSourcePreview source = 5;
   // Nonstandard residues omitted from descriptor calculation.
   int32 excluded = 6;
+  bool has_laboratory = 7;
+  // Zero without a laboratory; otherwise 1–3. No source/document in listings.
+  int32 laboratory_variants = 8;
 }
 
 message ProjectAlignmentPreview {
