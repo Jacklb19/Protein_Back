@@ -117,8 +117,8 @@ class ProjectService(StateBound):
 class ReferenceService(StateBound):
     @rpc_errors
     async def search_entries(self, request: reference_pb.SearchEntriesRequest, ctx: RequestContext) -> reference_pb.SearchEntriesResponse:
-        await self.identity(ctx)
-        result = await search_entries(self.context, request.query)
+        identity, _token = await self.identity(ctx)
+        result = await search_entries(self.context, request.query, identity.id)
         return reference_pb.SearchEntriesResponse(
             entries=[convert.entry_summary_message(item) for item in result.items],
             limit=UNIPROT_SEARCH_SIZE,
@@ -128,5 +128,5 @@ class ReferenceService(StateBound):
 
     @rpc_errors
     async def get_entry(self, request: reference_pb.GetEntryRequest, ctx: RequestContext) -> reference_pb.GetEntryResponse:
-        await self.identity(ctx)
-        return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession)))
+        identity, _token = await self.identity(ctx)
+        return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession, identity.id)))
