@@ -101,9 +101,17 @@ async def retrieve(context: ServiceContext, path: str, params: dict | None = Non
 router = APIRouter(prefix="/uniprot", tags=["public reference data"])
 
 
-async def search_entries(context: ServiceContext, query: str) -> SearchResult:
+def within_budget(context: ServiceContext, requester: str) -> None:
+    """One caller cannot turn this API into unbounded load on a public provider."""
+    if not context.uniprot_limiter.allow(requester):
+        raise HTTPException(429, "uniprot-rate-limit")
+
+
+async def search_entries(context: ServiceContext, query: str, requester: str) -> SearchResult:
+    # Shape first: a query that never reaches the provider does not spend the caller's budget.
     if not MIN_QUERY_LENGTH <= len(query.strip()) <= MAX_QUERY_LENGTH:
         raise HTTPException(422, "uniprot-query")
+    within_budget(context, requester)
     payload = await retrieve(context, "search", {"query": query.strip(), "format": "json", "size": UNIPROT_SEARCH_SIZE + 1, "fields": "accession,id,protein_name,organism_name,length,reviewed"})
     try:
         results = payload["results"]
@@ -115,9 +123,10 @@ async def search_entries(context: ServiceContext, query: str) -> SearchResult:
     return SearchResult(items=items, truncated=len(results) > UNIPROT_SEARCH_SIZE, retrieved_at=datetime.now(timezone.utc).isoformat())
 
 
-async def fetch_entry(context: ServiceContext, accession: str) -> UniProtEntry:
+async def fetch_entry(context: ServiceContext, accession: str, requester: str) -> UniProtEntry:
     if not re.fullmatch(ACCESSION_PATTERN, accession):
         raise HTTPException(422, "uniprot-accession")
+    within_budget(context, requester)
     payload = await retrieve(context, f"{accession}.json")
     try:
         result = entry(payload)
@@ -129,11 +138,11 @@ async def fetch_entry(context: ServiceContext, accession: str) -> UniProtEntry:
 
 
 @router.get("/search", response_model=SearchResult)
-async def search(request: Request, _identity: CurrentIdentity, query: str = Query(min_length=MIN_QUERY_LENGTH, max_length=MAX_QUERY_LENGTH)):
-    return await search_entries(context_of(request), query)
+async def search(request: Request, identity: CurrentIdentity, query: str = Query(min_length=MIN_QUERY_LENGTH, max_length=MAX_QUERY_LENGTH)):
+    return await search_entries(context_of(request), query, identity.id)
 
 
 @router.get("/{accession}", response_model=UniProtEntry)
-async def detail(request: Request, _identity: CurrentIdentity, accession: Annotated[str, Path(pattern=f"^{ACCESSION_PATTERN}$")]):
-    return await fetch_entry(context_of(request), accession)
+async def detail(request: Request, identity: CurrentIdentity, accession: Annotated[str, Path(pattern=f"^{ACCESSION_PATTERN}$")]):
+    return await fetch_entry(context_of(request), accession, identity.id)
 

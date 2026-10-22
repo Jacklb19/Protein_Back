@@ -18,6 +18,7 @@ from .identity import CurrentIdentity
 from .projects import router as projects_router
 from .uniprot import router as uniprot_router
 from .rpc.router import RpcRouter, rpc_applications
+from .rate_limit import FixedWindowLimiter
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
 
 API_TITLE = "ProteinForge API"
@@ -52,6 +53,8 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
 
     app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
     app.state.settings = resolved
+    # Shared by REST and RPC: one budget per signed-in caller for the queries this process forwards.
+    app.state.uniprot_limiter = FixedWindowLimiter(resolved.uniprot_requests_per_minute)
     # RPC services share the app state with REST; added first so CORS wraps them too.
     app.add_middleware(RpcRouter, applications=rpc_applications(app.state, API_VERSION))
     app.add_middleware(

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.config import load_settings
+from app.config import DEFAULT_UNIPROT_REQUESTS_PER_MINUTE, load_settings
 
 
 class DotenvTests(unittest.TestCase):
@@ -52,3 +52,10 @@ class DotenvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch("app.config.ENV_FILE", Path(directory) / "absent.env"), patch.dict(os.environ, {}, clear=True):
                 self.assertFalse(load_settings().identity_enabled)
+
+    def test_provider_budget_defaults_and_reads_the_environment(self):
+        self.assertEqual(load_settings({}).uniprot_requests_per_minute, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE)
+        self.assertEqual(load_settings({"UNIPROT_REQUESTS_PER_MINUTE": "5"}).uniprot_requests_per_minute, 5)
+        # Zero is the explicit way to run without a budget; an empty value keeps the default.
+        self.assertEqual(load_settings({"UNIPROT_REQUESTS_PER_MINUTE": "0"}).uniprot_requests_per_minute, 0)
+        self.assertEqual(load_settings({"UNIPROT_REQUESTS_PER_MINUTE": ""}).uniprot_requests_per_minute, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE)

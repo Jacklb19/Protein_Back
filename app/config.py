@@ -16,6 +16,8 @@ REQUEST_ID_HEADER = "X-Request-Id"
 RPC_REQUEST_HEADERS = ("Connect-Protocol-Version", "Connect-Timeout-Ms", "Grpc-Timeout", "X-Grpc-Web", "X-User-Agent")
 RPC_RESPONSE_HEADERS = ("Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin")
 DEFAULT_IDENTITY_TIMEOUT_SECONDS = 5.0
+# Queries one signed-in caller may forward to UniProt each minute, per process. 0 disables the budget.
+DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -27,6 +29,7 @@ class Settings:
     supabase_url: str = ""
     supabase_anon_key: str = ""
     identity_timeout_seconds: float = DEFAULT_IDENTITY_TIMEOUT_SECONDS
+    uniprot_requests_per_minute: int = DEFAULT_UNIPROT_REQUESTS_PER_MINUTE
 
     @property
     def identity_enabled(self) -> bool:
@@ -49,9 +52,11 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     }
     origins = _origins(env.get("ALLOWED_ORIGINS", "")) or _origins(env.get("FRONTEND_ORIGIN", ""))
     timeout = env.get("IDENTITY_TIMEOUT_SECONDS", "")
+    budget = env.get("UNIPROT_REQUESTS_PER_MINUTE", "")
     return Settings(
         allowed_origins=origins,
         supabase_url=env.get("SUPABASE_URL", "").strip().rstrip("/"),
         supabase_anon_key=env.get("SUPABASE_ANON_KEY", "").strip(),
         identity_timeout_seconds=float(timeout) if timeout else DEFAULT_IDENTITY_TIMEOUT_SECONDS,
+        uniprot_requests_per_minute=int(budget) if budget else DEFAULT_UNIPROT_REQUESTS_PER_MINUTE,
     )

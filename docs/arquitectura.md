@@ -12,7 +12,7 @@ API: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problema
 
 - FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
-- Proveedores externos: UniProt/PDBe/SIFTS para anotación/mapeo e interpretación pendiente. Próxima cadena de diseño/predicción tras probar Foundry o RFdiffusion/MPNN/ColabFold. ESM Atlas/ESMFold pasa a alternativa histórica.
+- Proveedores externos: UniProt/PDBe/SIFTS para anotación/mapeo e interpretación pendiente. Las consultas que la API reenvía a UniProt están acotadas por identidad y por proceso, para no convertir una sesión en carga sobre un servicio público. Próxima cadena de diseño/predicción tras probar Foundry o RFdiffusion/MPNN/ColabFold. ESM Atlas/ESMFold pasa a alternativa histórica.
 - Cliente React independiente: cálculo científico/generación guiada/visualización/informes locales. Backend no implementa algoritmos del navegador.
 
 ## Datos existentes
