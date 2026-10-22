@@ -108,9 +108,10 @@ def within_budget(context: ServiceContext, requester: str) -> None:
 
 
 async def search_entries(context: ServiceContext, query: str, requester: str) -> SearchResult:
-    within_budget(context, requester)
+    # Shape first: a query that never reaches the provider does not spend the caller's budget.
     if not MIN_QUERY_LENGTH <= len(query.strip()) <= MAX_QUERY_LENGTH:
         raise HTTPException(422, "uniprot-query")
+    within_budget(context, requester)
     payload = await retrieve(context, "search", {"query": query.strip(), "format": "json", "size": UNIPROT_SEARCH_SIZE + 1, "fields": "accession,id,protein_name,organism_name,length,reviewed"})
     try:
         results = payload["results"]
@@ -123,9 +124,9 @@ async def search_entries(context: ServiceContext, query: str, requester: str) ->
 
 
 async def fetch_entry(context: ServiceContext, accession: str, requester: str) -> UniProtEntry:
-    within_budget(context, requester)
     if not re.fullmatch(ACCESSION_PATTERN, accession):
         raise HTTPException(422, "uniprot-accession")
+    within_budget(context, requester)
     payload = await retrieve(context, f"{accession}.json")
     try:
         result = entry(payload)

@@ -57,6 +57,12 @@ class UniProtTests(unittest.TestCase):
         self.assertEqual(refused.status_code, 429)
         self.assertIn("uniprot-rate-limit", refused.text)
 
+    def test_a_malformed_query_does_not_spend_the_budget(self):
+        with self.client(requests_per_minute=1) as client:
+            headers = {"Authorization": "Bearer user-token"}
+            self.assertEqual(client.get("/v1/uniprot/search?query=%20%20", headers=headers).status_code, 422)
+            self.assertEqual(client.get("/v1/uniprot/P01308", headers=headers).status_code, 200)
+
 
 class RateLimitTests(unittest.TestCase):
     def test_counts_each_caller_separately_and_reopens_after_the_window(self):
