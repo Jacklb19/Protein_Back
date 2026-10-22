@@ -28,7 +28,7 @@ python -m venv .venv
 .venv/Scripts/python -m uvicorn app.main:app --reload
 ```
 
-`GET /v1/health` responde sin configuración. `GET /v1/me` requiere `SUPABASE_URL`, `SUPABASE_ANON_KEY` y un token Bearer de Supabase Auth; sin configuración devuelve 503. La aplicación carga automáticamente el `.env` de la raíz de este repositorio. Las variables del proceso tienen prioridad; no se modifica el entorno ni se buscan archivos en carpetas superiores. La configuración explícita de pruebas no lee archivos locales. CORS se limita a `ALLOWED_ORIGINS`.
+`GET /v1/health` responde sin configuración. `GET /v1/me` requiere `SUPABASE_URL`, `SUPABASE_ANON_KEY` y un token Bearer de Supabase Auth; sin configuración devuelve 503. La aplicación carga automáticamente el `.env` de la raíz de este repositorio. Las variables del proceso tienen prioridad; no se modifica el entorno ni se buscan archivos en carpetas superiores. La configuración explícita de pruebas no lee archivos locales. CORS se limita a `ALLOWED_ORIGINS`. `UNIPROT_REQUESTS_PER_MINUTE` acota por identidad las consultas que el proceso reenvía a UniProt (20 por omisión; 0 las deja sin presupuesto).
 
 El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `VITE_API_BASE_URL`. Configurar en `ALLOWED_ORIGINS` el origen exacto usado en el navegador, incluido el puerto (`localhost` y `127.0.0.1` son orígenes diferentes). No crear proyectos ni aplicar migraciones como parte de esa comprobación.
 
