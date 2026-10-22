@@ -177,6 +177,23 @@ class RpcTests(unittest.TestCase):
         self.assertEqual(entry.json()["code"], "invalid_argument")
         self.assertEqual(query.json()["code"], "invalid_argument")
 
+    def test_reference_budget_is_shared_with_rest_and_reported_as_resource_exhausted(self):
+        budgeted = Settings(supabase_url=SETTINGS.supabase_url, supabase_anon_key=SETTINGS.supabase_anon_key,
+                            allowed_origins=SETTINGS.allowed_origins, uniprot_requests_per_minute=1)
+
+        def handler(request):
+            if request.url.path == "/auth/v1/user":
+                return httpx.Response(200, json={"id": USER, "email": "a@example.org"})
+            return httpx.Response(200, json={"results": []})
+
+        with TestClient(create_app(budgeted, httpx.AsyncClient(transport=httpx.MockTransport(handler)))) as client:
+            first = self.call(client, f"{REFERENCE}/SearchEntries", {"query": "insulin"}, TOKEN)
+            refused = self.call(client, f"{REFERENCE}/SearchEntries", {"query": "insulin"}, TOKEN)
+            rest = client.get("/v1/uniprot/search?query=insulin", headers=TOKEN)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(refused.json(), {"code": "resource_exhausted", "message": "uniprot-rate-limit"})
+        self.assertEqual(rest.status_code, 429)
+
     def test_browser_preflight_allows_rpc_headers_and_rest_keeps_working(self):
         with self.client() as client:
             preflight = client.options(f"{ACCOUNT}/GetStatus", headers={"Origin": "http://127.0.0.1:5173", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type,x-grpc-web,x-user-agent,connect-timeout-ms"})
