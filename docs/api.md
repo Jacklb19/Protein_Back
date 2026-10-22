@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Presupuesto de consultas a UniProt — 22 oct 2026
+
+Cada identidad autenticada dispone de `UNIPROT_REQUESTS_PER_MINUTE` consultas por minuto (20 por omisión, 0 desactiva el presupuesto), compartidas entre `GET /v1/uniprot/search`, `GET /v1/uniprot/{accession}` y los métodos equivalentes de `ReferenceService`. Al agotarlo, la API responde 429 `uniprot-rate-limit` (`RESOURCE_EXHAUSTED`) sin llamar al proveedor. El recuento vive en el proceso: varias instancias multiplican el presupuesto, de modo que acota lo que una instancia reenvía y no constituye una cuota global. Sin cambios de esquema, migraciones ni contratos protobuf. [Detalle](uniprot.md).
+
 ## Laboratorio en Proyectos — 21 oct 2026
 
 Workspace acepta schemaVersion 1 (anterior) y 2 con laboratory={schemaVersion:1,documentJson,documentSha256}. Documento portable proteinforge-laboratory v1, hasta 1.000.000 bytes UTF-8, tres variantes/120 residuos; hash exacto, fuente y borradores validados sin descomprimir ZIP ni ejecutar ciencia. La secuencia activa coherente pertenece al state del laboratorio; activeSequence del proyecto sigue siendo el documento independiente del editor de análisis. REST y gRPC-Web usan la misma validación. Preview añade hasLaboratory/laboratoryVariants sin documento; protobuf añade Workspace.laboratory=6 y preview campos 7/8 sin renumerar. Mensaje RPC completo máximo 2.000.000 bytes, sin ampliar el límite. SQL rechaza v1 sobre un snapshot v2 con PT409/ABORTED; PT422 se traduce a validación. Nueva migración 20261021000000_laboratory_projects.sql comprobada en PostgreSQL 18 local y aplicada por el propietario según su confirmación del 21 oct; sin inspección remota. El código nuevo sigue pendiente de autorización para publicarse. No volver a ejecutar las migraciones.
