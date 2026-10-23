@@ -1,6 +1,6 @@
 # Asistente de interpretación
 
-Implementado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. El backend está implementado y probado en local, sin publicar; la interfaz espera una maqueta aprobada.
+Implementado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. Backend e interfaz están implementados localmente, sin publicar. La [interfaz A revisada y aprobada](../../frontend/docs/assistant-ui-proposal.md) aparece al pie de Analizar y Laboratorio y envía solo cifras, nunca la secuencia; [uso y activación](../../frontend/docs/assistant.md).
 
 ## Qué hace
 
@@ -28,9 +28,9 @@ Respuesta: `text` (hasta 4.000 caracteres), `model`, `provider` (`groq`) y `crea
 
 ## Reglas del texto
 
-El mensaje de sistema obliga a usar solo los datos recibidos, copiar las cifras tal como llegan, no afirmar función, estabilidad, actividad, novedad, seguridad ni éxito experimental, no recomendar experimentos y escribir texto plano de dos a cuatro párrafos (200 palabras como máximo). Incluye un glosario breve de las medidas que usa la aplicación (pLDDT, pTM, RMSD Cα, identidad, pI, GRAVY, índice de inestabilidad, índice alifático, perfil de hidropatía y alineamiento) para que las defina correctamente.
+El mensaje de sistema pide usar solo los datos recibidos, copiar las cifras tal como llegan, no afirmar función, estabilidad, actividad, novedad, seguridad ni éxito experimental y no recomendar experimentos. Abre con una frase sin cifras y sigue con tres o cuatro párrafos de dos o tres frases, hasta dos cifras por frase y 180 palabras en total, sin Markdown. Las cifras se atribuyen a sus medidas y no se extrapolan a solubilidad, agregación, termoestabilidad, expresión ni plegamiento. Incluye un glosario de pLDDT, pTM, RMSD Cα, identidad, pI, GRAVY, índice de inestabilidad, índice alifático, perfil de hidropatía y alineamiento. Estas reglas de redacción son instrucciones al proveedor; la comprobación posterior automática valida cifras, tamaño y finalización, no garantiza la corrección científica de toda la prosa.
 
-La API además **verifica cada cifra** del texto: debe ser un valor recibido o ese valor redondeado a menos decimales, en cualquiera de las dos convenciones decimales (`8.445,71` y `8445.71`, también con espacio fino de miles). Los enteros hasta 20 se admiten como conteos de prosa y los identificadores como `1UBQ`, `E6K` o `A30` no cuentan como cifras. Si aparece una cifra no respaldada, la respuesta se descarta con 502 `assistant-unverified-figure` y no se muestra.
+La API además **verifica las cifras** del texto: admite valores recibidos y su redondeo a menos decimales en cualquiera de las dos convenciones decimales (`8.445,71` y `8445.71`, también con espacio fino de miles). Admite también enteros hasta 20 y las cotas del glosario 40, 50, 70, 90 y 100; los identificadores como `1UBQ`, `E6K` o `A30` no cuentan como cifras. El verificador no distingue si una cota o un entero permitido se usa como escala o como resultado: ese límite impide prometer ausencia de alucinaciones. Si aparece una cifra fuera de lo admitido, se descarta con 502 `assistant-unverified-figure` y no se muestra.
 
 ## Errores
 
@@ -48,3 +48,7 @@ La API además **verifica cada cifra** del texto: debe ser un valor recibido o e
 - 70 pruebas del backend (12 SQL omitidas sin base): validación sin llamar al proveedor, clave del servidor y ausencia del token del usuario en la petición saliente, presupuesto, fallos del proveedor sin filtrar su texto, verificación de cifras (redondeos, convenciones, identificadores y cifras inventadas) y equivalencia REST, Connect y gRPC-Web. Buf lint correcto y `buf breaking` contra `main` sin roturas.
 - Tres llamadas reales locales a Groq el 23 oct con datos públicos de la variante 1 de 1UBQ (sin secuencia): las tres respondieron y pasaron la verificación de cifras (la primera no pudo mostrarse por la codificación de la consola de Windows; las otras tardaron 1,2–1,3 s). Sin glosario, el modelo definió mal el pTM como similitud con estructuras conocidas; con el glosario lo explica como confianza del modelo en el plegamiento global.
 - No comprobado: producción. Requiere publicar el backend y que `GROQ_API_KEY` exista en las variables del proyecto de Vercel; la clave local no viaja con el código.
+
+## Orden de publicación
+
+Tras autorización expresa: publicar backend primero (`dev`, merge y publicación de `main`), comprobar CI/despliegue y configuración del proveedor; luego actualizar el pin de `frontend/buf.gen.yaml` al commit backend publicado con este contrato, regenerar con `npx buf generate` y confirmar. Solo después publicar frontend. Su CI regenera desde el pin actual `5b6c4505c77293e1f4798e0bd86932e13c11600f`, que aún no tiene `AssistantService`: publicar los stubs nuevos con ese pin fallaría. Sin migraciones nuevas.
