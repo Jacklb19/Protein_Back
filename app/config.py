@@ -18,6 +18,9 @@ RPC_RESPONSE_HEADERS = ("Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin"
 DEFAULT_IDENTITY_TIMEOUT_SECONDS = 5.0
 # Queries one signed-in caller may forward to UniProt each minute, per process. 0 disables the budget.
 DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
+# Interpretations one signed-in caller may request each minute, per process. 0 disables the budget.
+DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE = 6
+DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -30,6 +33,13 @@ class Settings:
     supabase_anon_key: str = ""
     identity_timeout_seconds: float = DEFAULT_IDENTITY_TIMEOUT_SECONDS
     uniprot_requests_per_minute: int = DEFAULT_UNIPROT_REQUESTS_PER_MINUTE
+    groq_api_key: str = field(default="", repr=False)
+    assistant_model: str = DEFAULT_ASSISTANT_MODEL
+    assistant_requests_per_minute: int = DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE
+
+    @property
+    def assistant_enabled(self) -> bool:
+        return bool(self.groq_api_key)
 
     @property
     def identity_enabled(self) -> bool:
@@ -53,10 +63,14 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     origins = _origins(env.get("ALLOWED_ORIGINS", "")) or _origins(env.get("FRONTEND_ORIGIN", ""))
     timeout = env.get("IDENTITY_TIMEOUT_SECONDS", "")
     budget = env.get("UNIPROT_REQUESTS_PER_MINUTE", "")
+    assistant_budget = env.get("ASSISTANT_REQUESTS_PER_MINUTE", "")
     return Settings(
         allowed_origins=origins,
         supabase_url=env.get("SUPABASE_URL", "").strip().rstrip("/"),
         supabase_anon_key=env.get("SUPABASE_ANON_KEY", "").strip(),
         identity_timeout_seconds=float(timeout) if timeout else DEFAULT_IDENTITY_TIMEOUT_SECONDS,
         uniprot_requests_per_minute=int(budget) if budget else DEFAULT_UNIPROT_REQUESTS_PER_MINUTE,
+        groq_api_key=env.get("GROQ_API_KEY", "").strip(),
+        assistant_model=env.get("ASSISTANT_MODEL", "").strip() or DEFAULT_ASSISTANT_MODEL,
+        assistant_requests_per_minute=int(assistant_budget) if assistant_budget else DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE,
     )

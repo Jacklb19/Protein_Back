@@ -16,6 +16,7 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from protobuf.wkt.google.protobuf.timestamp_pb import Timestamp
 
+from ..assistant import Interpretation as InterpretationModel
 from ..projects import AlignmentSnapshot as AlignmentModel
 from ..projects import Project as ProjectModel
 from ..projects import ProjectSummary as SummaryModel
@@ -26,6 +27,7 @@ from ..projects import SequenceSource as SourceModel
 from ..projects import Workspace as WorkspaceModel
 from ..uniprot import EntrySummary as EntrySummaryModel
 from ..uniprot import UniProtEntry as EntryModel
+from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.project.v1 import workspace_pb
 from .gen.proteinforge.reference.v1 import reference_service_pb as reference_pb
@@ -39,6 +41,12 @@ MODES = {workspace_pb.AlignmentMode.GLOBAL: "global", workspace_pb.AlignmentMode
 TERMINAL_GAPS = {workspace_pb.TerminalGaps.FREE: "free", workspace_pb.TerminalGaps.NOT_APPLICABLE: "not-applicable"}
 ORIGINS = {workspace_pb.SourceOrigin.CATALOG: "catalog", workspace_pb.SourceOrigin.UNIPROT: "uniprot"}
 STATUSES = {"draft": project_pb.ProjectStatus.DRAFT}
+SUBJECTS = {
+    assistant_pb.Subject.ANALYSIS: "analysis",
+    assistant_pb.Subject.ALIGNMENT: "alignment",
+    assistant_pb.Subject.LABORATORY: "laboratory",
+    assistant_pb.Subject.CANDIDATES: "candidates",
+}
 ORDERS = {project_pb.ProjectOrder.UNSPECIFIED: DEFAULT_PROJECT_ORDER, project_pb.ProjectOrder.RECENT: PROJECT_ORDERS[0], project_pb.ProjectOrder.NAME: PROJECT_ORDERS[1]}
 PAGE_TOKEN_PREFIX = "offset:"
 
@@ -332,3 +340,22 @@ def page_offset(token: str, maximum: int, query: str = "", order: str = DEFAULT_
         return offset
     except ValueError as error:
         raise ConnectError(Code.INVALID_ARGUMENT, "validation: page_token") from error
+
+
+def interpret_document(request: assistant_pb.InterpretRequest) -> dict[str, Any]:
+    """The REST body of an interpretation request; an unspecified subject is invalid."""
+    return {
+        "subject": _enum(SUBJECTS, request.subject, "subject"),
+        "language": request.language,
+        "facts": [{"label": fact.label, "value": fact.value, "unit": optional(fact, "unit")} for fact in request.facts],
+        "sequence": optional(request, "sequence"),
+    }
+
+
+def interpretation_message(interpretation: InterpretationModel) -> assistant_pb.InterpretResponse:
+    return assistant_pb.InterpretResponse(
+        text=interpretation.text,
+        model=interpretation.model,
+        provider=interpretation.provider,
+        create_time=timestamp(interpretation.created_at),
+    )

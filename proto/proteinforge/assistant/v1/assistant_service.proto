@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package proteinforge.assistant.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Plain-language interpretation of results the browser already computed. The API forwards the
+// facts, and the sequence when given, to the configured language model provider with the
+// server's own key; the caller's token never leaves the API. Requires a valid bearer token.
+//
+// The model explains only: an answer citing a figure absent from the facts is refused.
+// Error codes: INVALID_ARGUMENT (facts, language or sequence out of bounds),
+// FAILED_PRECONDITION (no provider configured), RESOURCE_EXHAUSTED (caller or provider limit),
+// UNAVAILABLE (provider failure, incomplete or unverified answer), DEADLINE_EXCEEDED (timeout).
+// Equivalent REST route: POST /v1/assistant/interpret.
+service AssistantService {
+  rpc Interpret(InterpretRequest) returns (InterpretResponse);
+}
+
+enum Subject {
+  SUBJECT_UNSPECIFIED = 0;
+  // Descriptors, composition and hydropathy profile of one sequence.
+  SUBJECT_ANALYSIS = 1;
+  // A pairwise alignment and its scoring parameters.
+  SUBJECT_ALIGNMENT = 2;
+  // Laboratory variants redesigned on a known backbone, with their predictions.
+  SUBJECT_LABORATORY = 3;
+  // Candidates from the local generator.
+  SUBJECT_CANDIDATES = 4;
+}
+
+// One computed result as the interface shows it, for example "pI" / "4,81".
+message Fact {
+  // 1–120 printable characters.
+  string label = 1;
+  // 1–200 printable characters, written as displayed.
+  string value = 2;
+  // Up to 40 printable characters, for example "Da".
+  optional string unit = 3;
+}
+
+message InterpretRequest {
+  Subject subject = 1;
+  // "es" or "en": the language of the answer.
+  string language = 2;
+  // 1–80 facts.
+  repeated Fact facts = 3;
+  // Up to 2,000 residues of the standard alphabet plus X; omit to send no sequence.
+  optional string sequence = 4;
+}
+
+message InterpretResponse {
+  // Plain text, up to 4,000 characters.
+  string text = 1;
+  // Model that wrote it, for example "openai/gpt-oss-120b".
+  string model = 2;
+  // Provider that ran the model, for example "groq".
+  string provider = 3;
+  google.protobuf.Timestamp create_time = 4;
+}

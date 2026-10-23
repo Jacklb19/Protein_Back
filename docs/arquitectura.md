@@ -1,5 +1,9 @@
 # Arquitectura del backend
 
+Actualización del 23 oct 2026: el laboratorio ya está publicado y el recorrido real del 22 oct está registrado en [activación](../../frontend/docs/laboratory-activation.md); aislamiento por ID con la segunda cuenta sigue pendiente. El asistente de interpretación está implementado localmente por REST/Connect/gRPC-Web, con Groq, cuota por identidad y comprobación de cifras; [contrato, límites y publicación](assistant.md). La interfaz aprobada solo envía cifras. Inferencia estructural desde la aplicación y `DesignService` continúan sin implementar. Los apartados fechados inferiores conservan la preparación anterior y no autorizan futuras operaciones remotas.
+
+Las API de prueba alojadas de NVIDIA se limitan a evaluación interna; una web académica abierta a usuarios reales no queda autorizada por no cobrar. Revisión completa de términos, recomendación de ensayo solo para el propietario y advertencia de endpoint ESMFold obsoleto en [inferencia desde la app](../../frontend/docs/app-inference-proposal.md). No hay integración NVIDIA implementada ni contratos aceptados.
+
 ## Persistencia del laboratorio — 21 oct 2026
 
 Contrato aprobado e implementado localmente dentro del snapshot existente en analyses. Workspace v2 conserva un sobre del archivo portable con SHA-256, limitado a 1.000.000 bytes; el backend valida forma, fuente y borradores, sin descomprimir ZIP ni recalcular ciencia. El navegador revalida en Worker. Preview solo añade presencia/cantidad. RLS, SECURITY INVOKER y concurrencia existentes conservados; cliente antiguo v1 no puede sustituir v2. Ver [contrato y activación pendiente](project-persistence.md). El propietario confirmó aplicar la migración el 21 oct, sin inspección remota de nuestra parte; no repetirla. Código nuevo todavía local, publicación pendiente de autorización específica.
@@ -12,7 +16,7 @@ API: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problema
 
 - FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
-- Proveedores externos: UniProt/PDBe/SIFTS para anotación/mapeo e interpretación pendiente. Las consultas que la API reenvía a UniProt están acotadas por identidad y por proceso, para no convertir una sesión en carga sobre un servicio público. Próxima cadena de diseño/predicción tras probar Foundry o RFdiffusion/MPNN/ColabFold. ESM Atlas/ESMFold pasa a alternativa histórica.
+- Proveedores externos: UniProt para referencias y Groq para interpretación de resultados (local, pendiente de publicación). Ambos tienen presupuesto por identidad y por proceso. PDBe/SIFTS general e inferencia estructural desde la aplicación siguen pendientes; los resultados manuales de Colab se importan en el frontend. No se ejecutan modelos en la API.
 - Cliente React independiente: cálculo científico/generación guiada/visualización/informes locales. Backend no implementa algoritmos del navegador.
 
 ## Datos existentes

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.config import DEFAULT_UNIPROT_REQUESTS_PER_MINUTE, load_settings
+from app.config import DEFAULT_ASSISTANT_MODEL, DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE, load_settings
 
 
 class DotenvTests(unittest.TestCase):
@@ -59,3 +59,15 @@ class DotenvTests(unittest.TestCase):
         # Zero is the explicit way to run without a budget; an empty value keeps the default.
         self.assertEqual(load_settings({"UNIPROT_REQUESTS_PER_MINUTE": "0"}).uniprot_requests_per_minute, 0)
         self.assertEqual(load_settings({"UNIPROT_REQUESTS_PER_MINUTE": ""}).uniprot_requests_per_minute, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE)
+
+    def test_assistant_needs_a_key_and_never_shows_it(self):
+        unset = load_settings({})
+        self.assertFalse(unset.assistant_enabled)
+        self.assertEqual(unset.assistant_model, DEFAULT_ASSISTANT_MODEL)
+        self.assertEqual(unset.assistant_requests_per_minute, DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE)
+        configured = load_settings({"GROQ_API_KEY": " gsk_secret ", "ASSISTANT_MODEL": "other/model", "ASSISTANT_REQUESTS_PER_MINUTE": "0"})
+        self.assertTrue(configured.assistant_enabled)
+        self.assertEqual(configured.groq_api_key, "gsk_secret")
+        self.assertEqual(configured.assistant_model, "other/model")
+        self.assertEqual(configured.assistant_requests_per_minute, 0)
+        self.assertNotIn("gsk_secret", repr(configured))

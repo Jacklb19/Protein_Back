@@ -9,6 +9,7 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
+from ..assistant import InterpretRequest, interpret
 from ..config import Settings
 from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
@@ -19,6 +20,7 @@ from ..uniprot import UNIPROT_SEARCH_SIZE, fetch_entry, search_entries
 from . import convert
 from .errors import rpc_errors
 from .gen.proteinforge.account.v1 import account_service_pb as account_pb
+from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.reference.v1 import reference_service_pb as reference_pb
 
@@ -130,3 +132,11 @@ class ReferenceService(StateBound):
     async def get_entry(self, request: reference_pb.GetEntryRequest, ctx: RequestContext) -> reference_pb.GetEntryResponse:
         identity, _token = await self.identity(ctx)
         return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession, identity.id)))
+
+
+class AssistantService(StateBound):
+    @rpc_errors
+    async def interpret(self, request: assistant_pb.InterpretRequest, ctx: RequestContext) -> assistant_pb.InterpretResponse:
+        identity, _token = await self.identity(ctx)
+        document = InterpretRequest.model_validate(convert.interpret_document(request))
+        return convert.interpretation_message(await interpret(self.context, document, identity.id))
