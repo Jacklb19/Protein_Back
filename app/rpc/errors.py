@@ -30,6 +30,7 @@ STATUS_CODES: dict[int, Code] = {
 DETAIL_CODES: dict[str, Code] = {
     "projects-schema-unavailable": Code.FAILED_PRECONDITION,
     "identity-not-configured": Code.FAILED_PRECONDITION,
+    "assistant-not-configured": Code.FAILED_PRECONDITION,
 }
 
 logger = logging.getLogger(__name__)

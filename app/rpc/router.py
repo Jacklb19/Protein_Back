@@ -11,9 +11,10 @@ from typing import Any
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .gen.proteinforge.account.v1.account_service_connect import AccountServiceASGIApplication
+from .gen.proteinforge.assistant.v1.assistant_service_connect import AssistantServiceASGIApplication
 from .gen.proteinforge.project.v1.project_service_connect import ProjectServiceASGIApplication
 from .gen.proteinforge.reference.v1.reference_service_connect import ReferenceServiceASGIApplication
-from .services import AccountService, ProjectService, ReferenceService
+from .services import AccountService, AssistantService, ProjectService, ReferenceService
 
 # Largest request message accepted, in bytes: a project with 100,000 residues plus its snapshot fits.
 RPC_READ_MAX_BYTES = 2_000_000
@@ -25,6 +26,7 @@ def rpc_applications(state: Any, version: str) -> dict[str, ASGIApp]:
         AccountServiceASGIApplication(AccountService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
         ProjectServiceASGIApplication(ProjectService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
         ReferenceServiceASGIApplication(ReferenceService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
+        AssistantServiceASGIApplication(AssistantService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
     )
     return {f"{application.path}/": application for application in applications}
 
