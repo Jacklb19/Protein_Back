@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Asistente de interpretación — 23 oct 2026
+
+`POST /v1/assistant/interpret` y `proteinforge.assistant.v1.AssistantService/Interpret`, autenticados y equivalentes. Reciben el tema (`analysis`, `alignment`, `laboratory`, `candidates`), el idioma (`es`/`en`), de 1 a 80 datos ya calculados como los muestra la interfaz y, opcionalmente, hasta 2.000 residuos; devuelven texto, modelo, proveedor y fecha. La API reenvía esos datos a Groq con su propia clave; el token del usuario no sale. Errores: 422/`INVALID_ARGUMENT`, 503 `assistant-not-configured`/`FAILED_PRECONDITION`, 429 `assistant-rate-limit`/`RESOURCE_EXHAUSTED`, 502 (`assistant-provider-error`, `-invalid-response`, `-incomplete`, `-unverified-figure`)/`UNAVAILABLE` y 504/`DEADLINE_EXCEEDED`. Una respuesta que cite una cifra ausente de los datos se descarta. Sin esquema ni migraciones. [Detalle](assistant.md).
+
 ## Presupuesto de consultas a UniProt — 22 oct 2026
 
 Cada identidad autenticada dispone de `UNIPROT_REQUESTS_PER_MINUTE` consultas por minuto (20 por omisión, 0 desactiva el presupuesto), compartidas entre `GET /v1/uniprot/search`, `GET /v1/uniprot/{accession}` y los métodos equivalentes de `ReferenceService`. Al agotarlo, la API responde 429 `uniprot-rate-limit` (`RESOURCE_EXHAUSTED`) sin llamar al proveedor. El recuento vive en el proceso: varias instancias multiplican el presupuesto, de modo que acota lo que una instancia reenvía y no constituye una cuota global. Sin cambios de esquema, migraciones ni contratos protobuf. [Detalle](uniprot.md).
@@ -38,7 +42,6 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 
 | Método y ruta | Propósito | Autenticación prevista |
 |---|---|---|
-| POST /v1/assistant/interpret | Interpretar contexto ya calculado | Requerida |
 | POST /v1/reports | Registrar informe generado en cliente | Requerida |
 
 `GET /v1/pdb/{id}/structure` y `GET /v1/catalog/domains` dejan de ser rutas necesarias: BinaryCIF público se descarga de RCSB y el catálogo se sirve como JSON estático. RF-17/RF-18 no tienen rutas hasta acordar persistencia de candidatos, consentimiento, validación de PDB y procedencia.
@@ -47,13 +50,14 @@ El cliente obtiene la URL de la API mediante `VITE_API_BASE_URL`. No emitir dato
 
 ## gRPC
 
-Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectService` y `ReferenceService` están servidos y reutilizan las mismas funciones de dominio, validación Pydantic y autorización que las rutas REST, que siguen activas. `DesignService` (`v1alpha1`) es un borrador sin implementar.
+Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectService`, `ReferenceService` y `AssistantService` están servidos y reutilizan las mismas funciones de dominio, validación Pydantic y autorización que las rutas REST, que siguen activas. `DesignService` (`v1alpha1`) es un borrador sin implementar.
 
 | Servicio | Métodos | Equivale a |
 | --- | --- | --- |
 | `proteinforge.account.v1.AccountService` | `GetStatus`, `GetMe` | `GET /v1/health`, `GET /v1/me` |
 | `proteinforge.project.v1.ProjectService` | `ListProjects`, `GetProject`, `CreateProject`, `UpdateProject`, `DeleteProject` | `/v1/projects` |
 | `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
+| `proteinforge.assistant.v1.AssistantService` | `Interpret` | `POST /v1/assistant/interpret` |
 
 Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nativos no admiten prefijo). Cada servicio responde a tres protocolos según el `Content-Type`:
 
