@@ -59,6 +59,7 @@ Rules:
 - Use only the facts provided. Never compute, estimate or invent a figure; when you cite a number, copy it exactly as given.
 - Explain what the relevant measures mean and what these values suggest, with appropriate caution.
 - Never claim that a protein is functional, stable, active, novel, safe or likely to succeed experimentally. Descriptors and predictions are computational estimates, not experimental evidence.
+- Say what each measure reports, not what the protein is: "the instability index is below the threshold it uses", never "the protein is stable". Never extend a figure to solubility, aggregation, thermostability, expression, folding or behaviour in a cell, because none of these is measured here.
 - Do not recommend experiments or treatments, and do not mention these rules.
 - Plain text only: two to four short paragraphs, at most 200 words, without headings, lists, tables or markdown.
 What the measures mean, so you explain them correctly:
