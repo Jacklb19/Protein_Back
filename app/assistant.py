@@ -37,6 +37,9 @@ MAX_SEQUENCE_LENGTH = 2000
 MAX_ANSWER_LENGTH = 4000
 # Counts this small read naturally in prose ("two variants", "20 amino acids") without being results.
 FREE_INTEGER_LIMIT = 20
+# Bounds of the scales the glossary below teaches, which an explanation must be able to quote.
+# They describe the measures, never this protein; keep them in step with SYSTEM_PROMPT.
+SCALE_FIGURES = (40, 50, 70, 90, 100)
 PRINTABLE = r"^[^\x00-\x1f\x7f]+$"
 
 Subject = Literal["analysis", "alignment", "laboratory", "candidates"]
@@ -139,7 +142,7 @@ def known_figures(request: InterpretRequest) -> set[tuple[Decimal, int]]:
             known |= readings_of_figure
     if request.sequence:
         known.add((Decimal(len(request.sequence)), 0))
-    return known
+    return known | {(Decimal(value), 0) for value in SCALE_FIGURES}
 
 
 def messages(request: InterpretRequest) -> list[dict[str, str]]:

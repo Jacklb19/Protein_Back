@@ -157,6 +157,13 @@ class FigureTests(unittest.TestCase):
         for text in ["pLDDT de 93,40", "pLDDT de 94", "unos 120 residuos", "0,5 de diferencia"]:
             self.assertFalse(self.accepted(text, known), text)
 
+    def test_allows_the_scale_bounds_the_glossary_teaches(self):
+        # Explaining a measure needs its scale: "below the threshold of 40", "out of 100".
+        known = self.known("20,91")
+        self.assertTrue(self.accepted("Inestabilidad 20,91, por debajo del umbral de 40.", known))
+        self.assertTrue(self.accepted("Un pLDDT sobre 100; por encima de 90 es muy alto y bajo 50 muy bajo.", known))
+        self.assertFalse(self.accepted("La masa es 8.445,71 Da.", known))
+
 
 if __name__ == "__main__":
     unittest.main()
