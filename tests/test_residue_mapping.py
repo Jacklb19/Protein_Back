@@ -158,4 +158,3 @@ class PublicCacheTests(unittest.TestCase):
         tiny = SiftsCache(max_bytes=1)
         tiny.put(mapping)
         self.assertIsNone(tiny.get('1TRZ'))
-

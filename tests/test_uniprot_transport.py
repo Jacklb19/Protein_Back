@@ -38,4 +38,3 @@ class UniProtAcquisitionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(caught.exception.detail, code)
                 self.assertTrue(stream.closed)
                 self.assertLessEqual(stream.read, 1)
-
