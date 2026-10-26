@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [adaptador SIFTS interno](docs/sifts.md) se añade localmente el 25 de octubre, sin ruta pública ni cambio de contratos. Inferencia estructural no integrada.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [servicio SIFTS autenticado](docs/sifts.md), aprobado el 25, está implementado y probado localmente por REST/RPC; interfaz en desarrollo y publicación pendiente. Inferencia estructural no integrada.
 
 ## Organización
 
@@ -14,7 +14,7 @@ Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No e
 
 ## Responsabilidad
 
-FastAPI gestiona identidad, autorización, CRUD de proyectos, UniProt acotado e interpretación, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. SIFTS tiene adquisición/normalización interna, todavía sin suministro al navegador; predicción y Storage siguen sin integrar. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
+FastAPI gestiona identidad, autorización, CRUD de proyectos, UniProt acotado e interpretación, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. SIFTS añade correspondencias explícitas, versión/hash completos, caché pública acotada y cuota compartida de referencias; predicción y Storage siguen sin integrar. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
 
 ## Desarrollo local
 
@@ -48,4 +48,4 @@ Antes del primer despliegue: verificar runtime Python/Vercel, configurar los or�
 
 Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
 
-Próximas etapas: acordar suministro autenticado SIFTS y su enlace con el visor, y completar una nueva prueba gratuita de modelado para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Sin ejecutor, pesos ni endpoints de diseño implementados. Las autorizaciones de publicaciones anteriores no autorizan esta entrega, nuevas migraciones o servicios de pago.
+Próximas etapas: integrar/verificar el enlace SIFTS aprobado con el visor, y completar una nueva prueba gratuita de modelado para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Sin ejecutor, pesos ni endpoints de diseño implementados. Publicar requiere autorización nueva: backend con GetResidueMapping primero, repinchar/regenerar frontend después. Sin migraciones nuevas ni servicios de pago.
