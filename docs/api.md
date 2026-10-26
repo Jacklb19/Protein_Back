@@ -2,7 +2,7 @@
 
 ## Estado del 25 de octubre de 2026
 
-Asistente y laboratorio publicados en la entrega del 23; no volver a solicitar sus migraciones/publicación como si siguieran pendientes. Los apartados inferiores mantienen la historia de cada contrato. La continuación actual solo añade un [adaptador SIFTS interno](sifts.md), sin ruta REST/RPC, cambio protobuf o migración. El contrato de suministro al navegador sigue como propuesta; no puede llamarse desde la aplicación. El máximo de mensaje RPC continúa en 2.000.000 bytes. Lectura autenticada de Groq en producción todavía pendiente de comprobar.
+Asistente y laboratorio publicados en la entrega del 23; no volver a solicitar sus migraciones/publicación como si siguieran pendientes. Los apartados inferiores mantienen la historia de cada contrato. El propietario aprobó el suministro SIFTS y la maqueta de selección. Implementados localmente `GET /v1/pdb/{pdb_id}/residue-mapping` y `ReferenceService/GetResidueMapping`, autenticados, con versión/hash completos, presupuesto de referencias y respuesta máxima de2.000.000bytes. [Contrato y pruebas SIFTS](sifts.md). Sin migraciones nuevas; interfaz en desarrollo. Publicar backend primero, luego actualizar pin/regenerar frontend. Lectura autenticada de Groq en producción todavía pendiente de comprobar.
 
 ## Asistente de interpretación — 23 oct 2026
 

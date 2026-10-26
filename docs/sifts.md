@@ -1,6 +1,31 @@
-# Adquisición interna de correspondencias SIFTS
+# Correspondencias SIFTS autenticadas
 
-Implementada localmente el **25 de octubre de 2026** en `app/sifts.py`. Prepara el suministro de correspondencias al núcleo del frontend. **No está montada en FastAPI ni ReferenceService**: no añade endpoint, protobuf, tabla, migración o cambio de CSP. No es predicción ni ejecuta modelos.
+Implementadas localmente el **25 de octubre de 2026** tras la aprobación expresa del propietario de la maqueta y el suministro SIFTS. `app/sifts.py` adquiere/normaliza fuentes; `app/residue_mapping.py` sirve la misma función de dominio en REST y ReferenceService. Sin tablas, migraciones, cambio de CSP, modelos ni predicción. La integración visual aprobada sigue en desarrollo; publicación pendiente.
+
+## Contrato aprobado e implementado localmente
+
+`GET /v1/pdb/{pdb_id}/residue-mapping?accession=P01308&sequence_version=1` y `ReferenceService/GetResidueMapping` requieren JWT. Petición RPC: `pdb_id`, `accession`, `sequence_version`. PDB de cuatro caracteres en mayúscula, accession canónica (sin isoformas en este contrato) y versión positiva conocida. No se recibe secuencia ni se envía identidad del usuario a los proveedores. Respuesta tipada: `mapping` v1, `reference_sequence_version` y `reference_sequence_sha256`; sus nombres JSON son camelCase. Protobuf conserva `auth_seq_id` opcional: el cliente convierte ausencia a null y conserva texto exacto. No cambia el esquema interno v1 ni los números de campos anteriores.
+
+Se consulta UniProt en cada solicitud, también con SIFTS en caché. Deben coincidir accession, versión solicitada y todos los residuos mapeados; el SHA-256 cubre la secuencia completa ASCII mayúscula, sin espacios. Filtra filas por accession exacta. Una ausencia legítima devuelve filas vacías; una fuente ausente, fallida o incoherente produce error. El navegador debe comprobar el hash completo y retirar el vínculo al editar, cambiar referencia/modelo o cerrar sesión. El hash es acuerdo sobre bytes, no firma del proveedor.
+
+Cada operación consume una consulta del presupuesto existente de referencias (20/minuto por identidad y proceso por omisión), compartido con búsqueda/detalle UniProt REST/RPC. Plazo de 20 s para UniProt más adquisición SIFTS/PDBe, después de resolver identidad; se conserva cancelación. Sin promesa de cuota global entre instancias.
+
+La caché vive solo en el proceso: PDB público como clave, documento normalizado con sus fechas, TTL de 300 s, máximo cuatro entradas/4 MB serializados en total. No guarda identidades ni secuencias. Documentos de más de 5.000 filas o 2 MB no se cachean; eso no recorta la respuesta. UniProt se vuelve a comprobar aunque la correspondencia esté en caché. No hay caché SQL ni resultados negativos convertidos en ausencia.
+
+Respuesta completa REST/JSON y protobuf/JSON y binario acotados a **2.000.000 bytes**, envoltura incluida. Un resultado mayor se rechaza, sin truncamiento ni segmentación implícita. La adquisición interna de hasta10MB no aumenta el límite de transporte.
+
+| Situación | REST | RPC | Código estable |
+|---|---|---|---|
+| Sin identidad | 401/503 | UNAUTHENTICATED/FAILED_PRECONDITION | Códigos de identidad existentes |
+| Petición inválida | 422 | INVALID_ARGUMENT | `sifts-invalid-request` o validación de campos |
+| Versión o residuos incompatibles | 409 | FAILED_PRECONDITION | `sifts-reference-version`, `sifts-reference-mismatch` |
+| Fuente ausente | 404 | NOT_FOUND | `sifts-not-found` o `uniprot-not-found` |
+| Cuota agotada | 429 | RESOURCE_EXHAUSTED | `uniprot-rate-limit`, `sifts-provider-rate-limit` |
+| Respuesta completa demasiado grande | 413 | RESOURCE_EXHAUSTED | `sifts-response-too-large` |
+| Fuente inválida, excesiva o caída | 502 | UNAVAILABLE | Códigos SIFTS/UniProt sin cuerpo del proveedor |
+| Plazo agotado | 504 | DEADLINE_EXCEEDED | `sifts-timeout` o timeout UniProt |
+
+Respuestas no-store y correlación existentes. No hay cambios de permisos SQL o persistencia privada.
 
 ## Fuentes y normalización
 
@@ -15,7 +40,7 @@ El XML SIFTS aporta correspondencias explícitas por residuo entre PDB y UniProt
 
 El listado completo debe asignar una sola entidad/cadena de autor a cada cadena interna, y una sola identidad de autor/inserción/nombre a cada posición interna. Las copias de cadenas deben coincidir en el residuo de una misma accession/posición UniProt. La ausencia anotada pertenece a la dirección estructural y debe coincidir aunque cambie la referencia. Se conservan referencias distintas y segmentos solapados coincidentes, sin convertir diferencias legítimas entre accessions en contradicciones.
 
-El módulo no obtiene ni certifica la versión/hash de la secuencia UniProt completa. El futuro servicio tendrá que comprobar esa referencia y la procedencia exacta antes de vincular el mapeo al editor. Las filas de una referencia no validan por sí mismas la identidad de posiciones ajenas a su cobertura. El [núcleo frontend](../../frontend/docs/references.md) y el puente de selección todavía no están activados en Biblioteca.
+La función de adquisición no certifica por sí sola la versión/hash de UniProt; esa comprobación pertenece al servicio descrito arriba. Las filas no validan la identidad de posiciones ajenas a su cobertura. El [núcleo frontend](../../frontend/docs/references.md) comprueba el digest completo antes de habilitar selección; su conexión visual está en desarrollo.
 
 ## Límites y transporte
 
@@ -23,9 +48,9 @@ El módulo no obtiene ni certifica la versión/hash de la secuencia UniProt comp
 
 Límites internos por omisión: 2 MB del archivo comprimido, 10 MB del XML expandido y 10 MB del listado JSON; 100.000 residuos/filas, 750.000 elementos XML y profundidad 32. Descarga en bloques acotados, corta al superar tamaño anunciado o real y limita la expansión antes de reservar toda la salida. Rechaza gzip truncado, miembros concatenados/datos sobrantes, DTD (también con XML UTF-16), estructura XML no admitida, claves JSON repetidas, valores no finitos y datos incoherentes. Un plazo de 20 s cubre ambas solicitudes; el análisis comprueba cooperativamente el mismo plazo. La cancelación externa se propaga y los flujos se cierran.
 
-Las categorías `SiftsError` son códigos estables, sin cuerpos de proveedor ni trazas: solicitud inválida, fuente ausente, límite del proveedor, tamaño excesivo, respuesta inválida, proveedor fallido/inaccesible y timeout. Una fuente caída o inválida no devuelve una falsa lista vacía. Todavía no se decide su traducción REST/RPC.
+Las categorías `SiftsError` son códigos estables, sin cuerpos de proveedor ni trazas: solicitud inválida, fuente ausente, límite del proveedor, tamaño excesivo, respuesta inválida, proveedor fallido/inaccesible y timeout. Una fuente caída o inválida no devuelve una falsa lista vacía. Traducción REST/RPC en la tabla superior.
 
-Estos límites de **adquisición** no amplían el máximo global de **2.000.000 bytes por mensaje RPC**. El futuro contrato deberá comprobar el tamaño final y rechazarlo expresamente o acordar segmentación; no truncar filas silenciosamente. No hay caché persistente, presupuesto por usuario o autorización nueva activos porque la función aún no es una ruta pública.
+Estos límites de **adquisición** no amplían el máximo global de **2.000.000 bytes por mensaje RPC**. El servicio comprueba el tamaño final y lo rechaza expresamente; no trunca filas. La caché es únicamente local al proceso.
 
 ## Comprobación y repetición
 
@@ -50,10 +75,14 @@ El 25 de octubre se obtuvieron **102 correspondencias** para 1TRZ/P01308, cadena
 
 Las validaciones adicionales se comprobaron después contra el XML/listado completos ya descargados: conservan las 102 filas sin nuevas solicitudes. Batería backend de este cierre: 93 pruebas totales, 81 ejecutadas correctamente y 12 SQL omitidas sin base configurada.
 
+Después de activar el servicio local: 104 pruebas totales, 92 ejecutadas correctamente y 12 SQL omitidas. Incluyen REST, Connect y gRPC-Web, identidad antes de proveedor, cuota compartida, referencia completa/versiones, caché/expiración, respuestas demasiado grandes y timeout con cierre del flujo. UniProt ahora descarga en bloques acotados antes de analizar, con peticiones sin credenciales heredadas/redirecciones y representación HTTP sin compresión. Buf lint y regeneración reproducibles; dos espacios finales emitidos por el generador Python se conservan sin editar código generado a mano.
+
+Smoke de Connect local con **identidad simulada** y tres fuentes HTTPS reales (UniProt, SIFTS XML y PDBe): HTTP200,102filas,SV1 y hash completo99603f8f…; JSONprotobuf16.713bytes. Respuesta ignorada en `artifacts/sifts/1trz.rpc.json`. No prueba JWT del propietario ni producción. Smoke offline del frontend con coordenadas reales BinaryCIF:102recorridos posición→loci→posición,51posiciones UniProt únicas; cambio fuera de cobertura rechazado porhash. No nueva inferencia ni cuenta externa.
+
 La batería completa del backend se ejecuta al cerrar; las pruebas PostgreSQL sin base configurada se declaran omitidas y no equivalen a verificación SQL nueva. No hay cambios de acceso a datos o migraciones en este módulo.
 
-## Pendiente para activar S5
+## Pendiente para cerrar S5
 
-Revisar contrato autenticado REST/RPC, límites y cuota por identidad; comprobar versión/hash UniProt; acordar la composición visual/selector de cadena; conectar el origen y la selección sin aceptar respuestas antiguas. Después, pruebas de recorrido y una consulta autenticada real. No hace falta repetir migraciones ya aplicadas por el propietario. La publicación sigue necesitando autorización.
+Completar e integrar la interfaz aprobada, comprobar selección/vigencia de extremo a extremo y consulta con identidad real dentro de su alcance autorizado. No hace falta repetir migraciones. Publicar requiere autorización nueva: backend con GetResidueMapping primero, después actualizar el pin de buf.gen.yaml y regenerar/confirmar frontend, al final publicar frontend. El pin remoto actual todavía no tiene el método.
 
 Fuentes primarias: [SIFTS](https://www.ebi.ac.uk/pdbe/docs/sifts/), [PDBe API](https://www.ebi.ac.uk/pdbe/api/doc/pdb.html), [HTTPX streaming](https://www.python-httpx.org/async/#streaming-responses), [seguridad XML de Python](https://docs.python.org/3/library/xml.html#xml-security), [descompresión acotada zlib](https://docs.python.org/3/library/zlib.html#zlib.Decompress.decompress).
