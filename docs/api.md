@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Estado del 26 de octubre de 2026
+
+Asistente y laboratorio publicados en la entrega del 23; no volver a solicitar sus migraciones/publicación como si siguieran pendientes. Los apartados inferiores mantienen la historia de cada contrato. El propietario aprobó el suministro SIFTS y la maqueta de selección. Implementados localmente `GET /v1/pdb/{pdb_id}/residue-mapping` y `ReferenceService/GetResidueMapping`, autenticados, con versión/hash completos, presupuesto de referencias y respuesta máxima de 2.000.000 bytes. [Contrato y pruebas SIFTS](sifts.md). Sin migraciones nuevas; interfaz Biblioteca/Analizar integrada y verificada localmente el 26 con identidad simulada. Publicar backend primero, luego actualizar pin/regenerar frontend. Lectura autenticada de Groq y recorrido SIFTS con JWT real todavía pendientes de comprobar.
+
 ## Asistente de interpretación — 23 oct 2026
 
 `POST /v1/assistant/interpret` y `proteinforge.assistant.v1.AssistantService/Interpret`, autenticados y equivalentes. Reciben el tema (`analysis`, `alignment`, `laboratory`, `candidates`), el idioma (`es`/`en`), de 1 a 80 datos ya calculados como los muestra la interfaz y, opcionalmente, hasta 2.000 residuos; devuelven texto, modelo, proveedor y fecha. La interfaz aprobada solo usa Analizar/Laboratorio y omite la secuencia. La API reenvía los datos a Groq con su propia clave; el token del usuario no sale. Errores: 422/`INVALID_ARGUMENT`, 503 `assistant-not-configured`/`FAILED_PRECONDITION`, 429 `assistant-rate-limit`/`RESOURCE_EXHAUSTED`, 502 (`assistant-provider-error`, `-invalid-response`, `-incomplete`, `-unverified-figure`)/`UNAVAILABLE` y 504/`DEADLINE_EXCEEDED`. El verificador rechaza cifras fuera de los datos, redondeos y excepciones explícitas de conteos/cotas; no comprueba la semántica completa. Sin esquema ni migraciones. Implementado localmente, pendiente de publicación backend→actualizar pin/regenerar→frontend. [Detalle](assistant.md).

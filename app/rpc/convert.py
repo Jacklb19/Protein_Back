@@ -27,6 +27,7 @@ from ..projects import SequenceSource as SourceModel
 from ..projects import Workspace as WorkspaceModel
 from ..uniprot import EntrySummary as EntrySummaryModel
 from ..uniprot import UniProtEntry as EntryModel
+from ..residue_mapping import ResidueMappingResponse
 from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.project.v1 import workspace_pb
@@ -308,6 +309,17 @@ def entry_message(entry: EntryModel) -> reference_pb.Entry:
             for item in entry.structures
         ],
     )
+
+
+def residue_mapping_message(result: ResidueMappingResponse) -> reference_pb.GetResidueMappingResponse:
+    mapping = result.mapping
+    return reference_pb.GetResidueMappingResponse(
+        mapping=reference_pb.ResidueMappingDocument(
+            version=mapping.version, pdb_id=mapping.pdb_id,
+            provenance=reference_pb.ResidueMappingProvenance(**mapping.provenance.model_dump()),
+            rows=[reference_pb.ResidueMappingRow(**row.model_dump()) for row in mapping.rows]),
+        reference_sequence_version=result.reference_sequence_version,
+        reference_sequence_sha256=result.reference_sequence_sha256)
 
 
 # Pagination --------------------------------------------------------------------------------

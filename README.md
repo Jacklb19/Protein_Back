@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. CRUD de Proyectos ya publicado; guardado de laboratorio implementado y verificado localmente, con su nueva migración y publicación todavía pendientes. Proveedores de inferencia no integrados.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [servicio SIFTS autenticado](docs/sifts.md), aprobado el 25, está implementado y probado localmente por REST/RPC; el 26 se completó su interfaz Biblioteca/Analizar y las pruebas combinadas. Publicación y consulta con JWT real pendientes. Inferencia estructural no integrada.
 
 ## Organización
 
@@ -14,7 +14,7 @@ Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No e
 
 ## Responsabilidad
 
-FastAPI gestiona identidad, autorización, CRUD de proyectos y UniProt acotado, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. Interpretación/predicción/PDBe pendientes; Storage aún no integrado. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
+FastAPI gestiona identidad, autorización, CRUD de proyectos, UniProt acotado e interpretación, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. SIFTS añade correspondencias explícitas, versión/hash completos, caché pública acotada y cuota compartida de referencias; predicción y Storage siguen sin integrar. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
 
 ## Desarrollo local
 
@@ -38,7 +38,7 @@ El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `V
 python -m unittest discover -s tests -v
 ```
 
-Cubre auditoría estática, API REST y RPC y proyectos con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, los seis tests SQL se identifican como omitidos en unittest. CI ejecuta esa batería.
+Cubre auditoría estática, API REST y RPC, proyectos y adaptadores con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, las pruebas SQL se identifican como omitidas en unittest; no equivalen a verificación de base nueva. CI ejecuta esa batería.
 
 ## Configuración
 
@@ -48,4 +48,4 @@ Antes del primer despliegue: verificar runtime Python/Vercel, configurar los or�
 
 Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
 
-Próxima etapa: [laboratorio didáctico de diseño](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Primero un caso pequeño completo y medidas de recursos; después creación/modificación/comparación 3D. Sin ejecutor, pesos ni endpoints de diseño implementados. Push de dev autorizado con autoría exclusiva del propietario; no activa migraciones, merge ni servicios de pago.
+Próximas etapas: publicar y verificar el enlace SIFTS con sesión real, y obtener un diseño completo para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). La prueba manual gratuita RFD4 produjo un CIF legible de 59 residuos, pero fragmentado; no demuestra predicción independiente ni inferencia desde la app. Sin ejecutor, pesos ni endpoints de diseño implementados. Publicar requiere autorización nueva: backend con GetResidueMapping primero, repinchar/regenerar frontend después. Sin migraciones nuevas ni servicios de pago.

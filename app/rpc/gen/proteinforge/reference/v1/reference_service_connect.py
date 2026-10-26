@@ -16,7 +16,7 @@ from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DE
 from protobuf import DescService
 
 from . import reference_service_pb
-from .reference_service_pb import GetEntryRequest, GetEntryResponse, SearchEntriesRequest, SearchEntriesResponse
+from .reference_service_pb import GetEntryRequest, GetEntryResponse, GetResidueMappingRequest, GetResidueMappingResponse, SearchEntriesRequest, SearchEntriesResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterable, Mapping
@@ -44,6 +44,14 @@ class ReferenceService(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     async def get_entry(self, request: GetEntryRequest, ctx: RequestContext[GetEntryRequest, GetEntryResponse], /) -> GetEntryResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    async def get_residue_mapping(self, request: GetResidueMappingRequest, ctx: RequestContext[GetResidueMappingRequest, GetResidueMappingResponse], /) -> GetResidueMappingResponse:
+        """
+        Explicit SIFTS residues for one exact UniProt sequence version. Authenticated,
+        shares the reference request budget. No sequence or caller identity reaches providers.
+        A complete response must fit 2,000,000 bytes; never silently truncates rows.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     @classmethod
@@ -83,6 +91,16 @@ class ReferenceServiceASGIApplication(ConnectASGIApplication[ReferenceService]):
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
                     ),
                     function=svc.get_entry,
+                ),
+                "/proteinforge.reference.v1.ReferenceService/GetResidueMapping": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetResidueMapping",
+                        service_name="proteinforge.reference.v1.ReferenceService",
+                        input=GetResidueMappingRequest,
+                        output=GetResidueMappingResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=svc.get_residue_mapping,
                 ),
             },
             interceptors=interceptors,
@@ -154,6 +172,33 @@ class ReferenceServiceClient(ConnectClient):
             use_get=use_get,
         )
 
+    async def get_residue_mapping(
+        self,
+        request: GetResidueMappingRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> GetResidueMappingResponse:
+        """
+        Explicit SIFTS residues for one exact UniProt sequence version. Authenticated,
+        shares the reference request budget. No sequence or caller identity reaches providers.
+        A complete response must fit 2,000,000 bytes; never silently truncates rows.
+        """
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetResidueMapping",
+                service_name="proteinforge.reference.v1.ReferenceService",
+                input=GetResidueMappingRequest,
+                output=GetResidueMappingResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+
 class ReferenceServiceSync(Protocol):
     """
     Public UniProt annotations through the API. Only the text query or accession is sent
@@ -171,6 +216,14 @@ class ReferenceServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     def get_entry(self, request: GetEntryRequest, ctx: RequestContext[GetEntryRequest, GetEntryResponse], /) -> GetEntryResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    def get_residue_mapping(self, request: GetResidueMappingRequest, ctx: RequestContext[GetResidueMappingRequest, GetResidueMappingResponse], /) -> GetResidueMappingResponse:
+        """
+        Explicit SIFTS residues for one exact UniProt sequence version. Authenticated,
+        shares the reference request budget. No sequence or caller identity reaches providers.
+        A complete response must fit 2,000,000 bytes; never silently truncates rows.
+        """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
     @classmethod
@@ -208,6 +261,16 @@ class ReferenceServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
                     ),
                     function=service.get_entry,
+                ),
+                "/proteinforge.reference.v1.ReferenceService/GetResidueMapping": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetResidueMapping",
+                        service_name="proteinforge.reference.v1.ReferenceService",
+                        input=GetResidueMappingRequest,
+                        output=GetResidueMappingResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=service.get_residue_mapping,
                 ),
             },
             interceptors=interceptors,
@@ -271,6 +334,32 @@ class ReferenceServiceClientSync(ConnectClientSync):
                 service_name="proteinforge.reference.v1.ReferenceService",
                 input=GetEntryRequest,
                 output=GetEntryResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+    def get_residue_mapping(
+        self,
+        request: GetResidueMappingRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> GetResidueMappingResponse:
+        """
+        Explicit SIFTS residues for one exact UniProt sequence version. Authenticated,
+        shares the reference request budget. No sequence or caller identity reaches providers.
+        A complete response must fit 2,000,000 bytes; never silently truncates rows.
+        """
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetResidueMapping",
+                service_name="proteinforge.reference.v1.ReferenceService",
+                input=GetResidueMappingRequest,
+                output=GetResidueMappingResponse,
                 idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
             ),
             headers=headers,

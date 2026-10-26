@@ -21,6 +21,7 @@ STATUS_CODES: dict[int, Code] = {
     409: Code.ABORTED,
     422: Code.INVALID_ARGUMENT,
     429: Code.RESOURCE_EXHAUSTED,
+    413: Code.RESOURCE_EXHAUSTED,
     502: Code.UNAVAILABLE,
     503: Code.UNAVAILABLE,
     504: Code.DEADLINE_EXCEEDED,
@@ -31,6 +32,8 @@ DETAIL_CODES: dict[str, Code] = {
     "projects-schema-unavailable": Code.FAILED_PRECONDITION,
     "identity-not-configured": Code.FAILED_PRECONDITION,
     "assistant-not-configured": Code.FAILED_PRECONDITION,
+    "sifts-reference-version": Code.FAILED_PRECONDITION,
+    "sifts-reference-mismatch": Code.FAILED_PRECONDITION,
 }
 
 logger = logging.getLogger(__name__)
