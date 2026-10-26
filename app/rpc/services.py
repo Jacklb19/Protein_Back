@@ -17,6 +17,7 @@ from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectUpda
 from ..projects import fetch_project, fetch_projects, remove_project, save_project
 from ..project_config import PROJECT_NAME_LENGTH
 from ..uniprot import UNIPROT_SEARCH_SIZE, fetch_entry, search_entries
+from ..residue_mapping import MAPPING_RESPONSE_MAX_BYTES, get_residue_mapping
 from . import convert
 from .errors import rpc_errors
 from .gen.proteinforge.account.v1 import account_service_pb as account_pb
@@ -132,6 +133,16 @@ class ReferenceService(StateBound):
     async def get_entry(self, request: reference_pb.GetEntryRequest, ctx: RequestContext) -> reference_pb.GetEntryResponse:
         identity, _token = await self.identity(ctx)
         return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession, identity.id)))
+
+    @rpc_errors
+    async def get_residue_mapping(self, request: reference_pb.GetResidueMappingRequest, ctx: RequestContext) -> reference_pb.GetResidueMappingResponse:
+        identity, _token = await self.identity(ctx)
+        result = await get_residue_mapping(self.context, request.pdb_id, request.accession, request.sequence_version, identity.id)
+        message = convert.residue_mapping_message(result)
+        # JSON/REST and binary are checked separately, including their full envelope.
+        if len(message.to_binary()) > MAPPING_RESPONSE_MAX_BYTES or len(message.to_json().encode('utf-8')) > MAPPING_RESPONSE_MAX_BYTES:
+            raise ConnectError(Code.RESOURCE_EXHAUSTED, 'sifts-response-too-large')
+        return message
 
 
 class AssistantService(StateBound):

@@ -20,6 +20,13 @@ service ReferenceService {
   rpc GetEntry(GetEntryRequest) returns (GetEntryResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+
+  // Explicit SIFTS residues for one exact UniProt sequence version. Authenticated,
+  // shares the reference request budget. No sequence or caller identity reaches providers.
+  // A complete response must fit 2,000,000 bytes; never silently truncates rows.
+  rpc GetResidueMapping(GetResidueMappingRequest) returns (GetResidueMappingResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message EntrySummary {
@@ -75,4 +82,46 @@ message GetEntryRequest {
 
 message GetEntryResponse {
   Entry entry = 1;
+}
+
+message GetResidueMappingRequest {
+  string pdb_id = 1;
+  string accession = 2;
+  int32 sequence_version = 3;
+}
+
+message ResidueMappingProvenance {
+  string provider = 1;
+  string xml_url = 2;
+  string residue_listing_url = 3;
+  string retrieved_at = 4;
+  string release_date = 5;
+}
+
+message ResidueMappingRow {
+  string entity_id = 1;
+  string label_asym_id = 2;
+  string auth_asym_id = 3;
+  int32 label_seq_id = 4;
+  optional string auth_seq_id = 5;
+  string insertion_code = 6;
+  string segment_id = 7;
+  string accession = 8;
+  int32 position = 9;
+  string residue = 10;
+  bool not_observed = 11;
+}
+
+message ResidueMappingDocument {
+  int32 version = 1;
+  string pdb_id = 2;
+  ResidueMappingProvenance provenance = 3;
+  repeated ResidueMappingRow rows = 4;
+}
+
+message GetResidueMappingResponse {
+  ResidueMappingDocument mapping = 1;
+  int32 reference_sequence_version = 2;
+  // SHA-256 of the entire exact uppercase ASCII sequence, without spaces.
+  string reference_sequence_sha256 = 3;
 }
