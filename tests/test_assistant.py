@@ -138,6 +138,19 @@ class AssistantTests(unittest.TestCase):
         _flags, length = struct.unpack(">BI", web.content[:5])
         self.assertEqual(InterpretResponse.from_binary(web.content[5:5 + length]).text, ANSWER)
 
+    def test_missing_configuration_has_a_stable_rpc_error_without_calling_the_provider(self):
+        message = {"subject": "SUBJECT_ANALYSIS", "language": "es", "facts": BODY["facts"]}
+        binary = InterpretMessage(subject=Subject.ANALYSIS, language="es", facts=[Fact(**fact) for fact in BODY["facts"]]).to_binary()
+        with self.client(key="") as client:
+            connect = client.post(f"{ASSISTANT}/Interpret", headers={**CONNECT, **TOKEN}, content=json.dumps(message))
+            web = client.post(f"{ASSISTANT}/Interpret", headers={"Content-Type": "application/grpc-web+proto", "X-Grpc-Web": "1", **TOKEN}, content=struct.pack(">BI", 0, len(binary)) + binary)
+        self.assertEqual(connect.status_code, 400)
+        self.assertEqual(connect.json(), {"code": "failed_precondition", "message": "assistant-not-configured"})
+        flags, length = struct.unpack(">BI", web.content[:5])
+        self.assertEqual(flags, 0x80)
+        self.assertEqual(web.content[5:5 + length].decode(), "grpc-status: 9\r\ngrpc-message: assistant-not-configured\r\n")
+        self.assertEqual(self.sent, [])
+
 
 class FigureTests(unittest.TestCase):
     def known(self, *values, sequence=None):
