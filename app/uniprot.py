@@ -77,25 +77,42 @@ def entry(payload: dict) -> UniProtEntry:
 
 
 async def retrieve(context: ServiceContext, path: str, params: dict | None = None):
-    # Fixed destination and separately constructed headers: private identity is never sent to UniProt.
+    # A fresh request does not inherit identity headers, auth or cookies from the shared client.
     try:
-        response = await context.http_client.get(f"{UNIPROT_BASE_URL}/{path}", params=params, headers={"Accept": "application/json"}, timeout=UNIPROT_TIMEOUT_SECONDS)
+        request = httpx.Request('GET', f'{UNIPROT_BASE_URL}/{path}', params=params,
+                                headers={'Accept': 'application/json', 'Accept-Encoding': 'identity'},
+                                extensions={'timeout': httpx.Timeout(UNIPROT_TIMEOUT_SECONDS).as_dict()})
+        response = await context.http_client.send(request, stream=True, auth=None, follow_redirects=False)
+        try:
+            if response.status_code == 404:
+                raise HTTPException(404, 'uniprot-not-found')
+            if response.status_code == 400:
+                raise HTTPException(422, 'uniprot-query')
+            if response.status_code == 429:
+                raise HTTPException(429, 'uniprot-rate-limit')
+            if response.status_code != 200:
+                raise HTTPException(502, 'uniprot-provider-error')
+            length = response.headers.get('Content-Length')
+            if length is not None and (not length.isascii() or not length.isdecimal()
+                                       or len(length) > 9 or int(length) > MAX_UNIPROT_BYTES):
+                raise HTTPException(502, 'uniprot-provider-error')
+            if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
+                raise HTTPException(502, 'uniprot-invalid-response')
+            output = bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=65_536):
+                if len(output) + len(chunk) > MAX_UNIPROT_BYTES:
+                    raise HTTPException(502, 'uniprot-provider-error')
+                output.extend(chunk)
+            try:
+                return httpx.Response(200, content=bytes(output)).json()
+            except (ValueError, RecursionError) as error:
+                raise HTTPException(502, 'uniprot-invalid-response') from error
+        finally:
+            await response.aclose()
     except httpx.TimeoutException as error:
         raise HTTPException(504, "uniprot-timeout") from error
     except httpx.HTTPError as error:
         raise HTTPException(502, "uniprot-unreachable") from error
-    if response.status_code == 404:
-        raise HTTPException(404, "uniprot-not-found")
-    if response.status_code == 400:
-        raise HTTPException(422, "uniprot-query")
-    if response.status_code == 429:
-        raise HTTPException(429, "uniprot-rate-limit")
-    if response.status_code != 200 or len(response.content) > MAX_UNIPROT_BYTES:
-        raise HTTPException(502, "uniprot-provider-error")
-    try:
-        return response.json()
-    except ValueError as error:
-        raise HTTPException(502, "uniprot-invalid-response") from error
 
 
 router = APIRouter(prefix="/uniprot", tags=["public reference data"])
