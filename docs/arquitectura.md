@@ -1,8 +1,8 @@
 # Arquitectura del backend
 
-## Continuación del 25 de octubre de 2026
+## Continuación del 26 de octubre de 2026
 
-La publicación de proyectos/laboratorio/asistente se completó el 23 de octubre; las entradas inferiores conservan sus estados anteriores. La lectura autenticada de Groq en producción aún no se ha comprobado. El propietario aprobó la maqueta y el suministro SIFTS: implementados localmente adquisición/normalización, comprobación de referencia completa, caché pública acotada por proceso y rutas autenticadas REST/RPC. [Contrato y evidencia](sifts.md). La interfaz aprobada está en desarrollo. Sin inferencia estructural desde la aplicación, migraciones nuevas o publicación de esta continuación. Backend nuevo debe publicarse primero; repinchar/regenerar frontend después.
+La publicación de proyectos/laboratorio/asistente se completó el 23 de octubre; las entradas fechadas inferiores conservan sus estados anteriores. La lectura autenticada de Groq en producción aún no se ha comprobado. El propietario aprobó la maqueta y el suministro SIFTS: implementados localmente adquisición/normalización, comprobación de referencia completa, caché pública acotada por proceso y rutas autenticadas REST/RPC. [Contrato y evidencia](sifts.md). La interfaz Biblioteca/Analizar está integrada y verificada localmente, con identidad simulada. Sin inferencia estructural desde la aplicación, migraciones nuevas o publicación de esta continuación. Backend nuevo debe publicarse primero; repinchar/regenerar frontend después.
 
 Actualización del 23 oct 2026: el laboratorio ya está publicado y el recorrido real del 22 oct está registrado en [activación](../../frontend/docs/laboratory-activation.md); aislamiento por ID con la segunda cuenta sigue pendiente. El asistente de interpretación está implementado localmente por REST/Connect/gRPC-Web, con Groq, cuota por identidad y comprobación de cifras; [contrato, límites y publicación](assistant.md). La interfaz aprobada solo envía cifras. Inferencia estructural desde la aplicación y `DesignService` continúan sin implementar. Los apartados fechados inferiores conservan la preparación anterior y no autorizan futuras operaciones remotas.
 
@@ -14,13 +14,13 @@ Contrato aprobado e implementado localmente dentro del snapshot existente en ana
 
 ## Estado
 
-API: health/me, CRUD proyectos y UniProt autenticado, CORS/correlación/problemas RFC 9457 ya publicados en la entrega anterior. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Persistencia nueva del laboratorio local y migración aplicada según el propietario. RLS/concurrencia PostgreSQL 18 comprobados localmente; publicación del laboratorio y recorrido con sesión Supabase real todavía pendientes. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md).
+API: health/me, CRUD proyectos, persistencia del laboratorio, UniProt e interpretación ya publicados. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Migración del laboratorio aplicada por el propietario y recorrido real registrado; no repetirla. SIFTS está integrado solo localmente y falta su recorrido con JWT real. RLS/concurrencia PostgreSQL 18 comprobados en la entrega previa, sin nueva ejecución SQL en esta continuación. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md), [carga HTTP local con proveedores simulados](local-api-load.md).
 
 ## Responsabilidades
 
 - FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
 - Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
-- Proveedores externos: UniProt para referencias y Groq para interpretación de resultados (local, pendiente de publicación). Ambos tienen presupuesto por identidad y por proceso. PDBe/SIFTS general e inferencia estructural desde la aplicación siguen pendientes; los resultados manuales de Colab se importan en el frontend. No se ejecutan modelos en la API.
+- Proveedores externos: UniProt para referencias y Groq para interpretación de resultados, publicados; PDBe/SIFTS autenticado implementado localmente. Presupuestos por identidad y por proceso, con caché pública SIFTS acotada. Inferencia estructural desde la aplicación pendiente; los resultados manuales de Colab se importan en el frontend. No se ejecutan modelos en la API.
 - Cliente React independiente: cálculo científico/generación guiada/visualización/informes locales. Backend no implementa algoritmos del navegador.
 
 ## Datos existentes

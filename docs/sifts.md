@@ -1,6 +1,6 @@
 # Correspondencias SIFTS autenticadas
 
-Implementadas localmente el **25 de octubre de 2026** tras la aprobación expresa del propietario de la maqueta y el suministro SIFTS. `app/sifts.py` adquiere/normaliza fuentes; `app/residue_mapping.py` sirve la misma función de dominio en REST y ReferenceService. Sin tablas, migraciones, cambio de CSP, modelos ni predicción. La integración visual aprobada sigue en desarrollo; publicación pendiente.
+Implementadas localmente el **25 de octubre de 2026** tras la aprobación expresa del propietario de la maqueta y el suministro SIFTS. `app/sifts.py` adquiere/normaliza fuentes; `app/residue_mapping.py` sirve la misma función de dominio en REST y ReferenceService. Sin tablas, migraciones, cambio de CSP, modelos ni predicción. La integración visual aprobada se completó y verificó localmente el 26; publicación pendiente.
 
 ## Contrato aprobado e implementado localmente
 
@@ -83,6 +83,8 @@ La batería completa del backend se ejecuta al cerrar; las pruebas PostgreSQL si
 
 ## Pendiente para cerrar S5
 
-Completar e integrar la interfaz aprobada, comprobar selección/vigencia de extremo a extremo y consulta con identidad real dentro de su alcance autorizado. No hace falta repetir migraciones. Publicar requiere autorización nueva: backend con GetResidueMapping primero, después actualizar el pin de buf.gen.yaml y regenerar/confirmar frontend, al final publicar frontend. El pin remoto actual todavía no tiene el método.
+La interfaz Biblioteca/Analizar ya está integrada: selección bidireccional, cadena explícita, versión/hash completos e invalidación al editar o cambiar referencia. Verificación combinada: 436 unitarias y 76 recorridos Chromium del frontend, incluidos selección/vigencia con identidad/RPC simulados y coordenadas reales, además de PWA. [Estado y límites](../../frontend/docs/plan-desarrollo.md).
+
+Queda consulta con identidad real dentro de su alcance autorizado. No hace falta repetir migraciones. Publicar requiere autorización nueva: backend con GetResidueMapping primero, después actualizar el pin de buf.gen.yaml y regenerar/confirmar frontend, al final publicar frontend. El pin remoto actual todavía no tiene el método.
 
 Fuentes primarias: [SIFTS](https://www.ebi.ac.uk/pdbe/docs/sifts/), [PDBe API](https://www.ebi.ac.uk/pdbe/api/doc/pdb.html), [HTTPX streaming](https://www.python-httpx.org/async/#streaming-responses), [seguridad XML de Python](https://docs.python.org/3/library/xml.html#xml-security), [descompresión acotada zlib](https://docs.python.org/3/library/zlib.html#zlib.Decompress.decompress).

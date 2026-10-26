@@ -1,6 +1,6 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [servicio SIFTS autenticado](docs/sifts.md), aprobado el 25, está implementado y probado localmente por REST/RPC; interfaz en desarrollo y publicación pendiente. Inferencia estructural no integrada.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [servicio SIFTS autenticado](docs/sifts.md), aprobado el 25, está implementado y probado localmente por REST/RPC; el 26 se completó su interfaz Biblioteca/Analizar y las pruebas combinadas. Publicación y consulta con JWT real pendientes. Inferencia estructural no integrada.
 
 ## Organización
 
@@ -48,4 +48,4 @@ Antes del primer despliegue: verificar runtime Python/Vercel, configurar los or�
 
 Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
 
-Próximas etapas: integrar/verificar el enlace SIFTS aprobado con el visor, y completar una nueva prueba gratuita de modelado para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Sin ejecutor, pesos ni endpoints de diseño implementados. Publicar requiere autorización nueva: backend con GetResidueMapping primero, repinchar/regenerar frontend después. Sin migraciones nuevas ni servicios de pago.
+Próximas etapas: publicar y verificar el enlace SIFTS con sesión real, y obtener un diseño completo para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). La prueba manual gratuita RFD4 produjo un CIF legible de 59 residuos, pero fragmentado; no demuestra predicción independiente ni inferencia desde la app. Sin ejecutor, pesos ni endpoints de diseño implementados. Publicar requiere autorización nueva: backend con GetResidueMapping primero, repinchar/regenerar frontend después. Sin migraciones nuevas ni servicios de pago.
