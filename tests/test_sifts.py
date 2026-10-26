@@ -102,6 +102,66 @@ class MappingTests(unittest.TestCase):
                     b"not XML"]:
             self.assertEqual(self.assert_invalid(xml, synthetic_listing()), "sifts-invalid-response")
 
+    def test_one_internal_chain_cannot_change_entity_or_author_chain(self):
+        for field, value in (("entity_id", 2), ("chain_id", "B")):
+            listing = synthetic_listing()
+            molecule = listing["1trz"]["molecules"][0]
+            duplicate = deepcopy(molecule)
+            if field == "entity_id":
+                duplicate[field] = value
+            else:
+                duplicate["chains"][0][field] = value
+            # The contradiction matters even when XML does not mention the other chain.
+            listing["1trz"]["molecules"].append(duplicate)
+            with self.subTest(field=field):
+                self.assertEqual(self.assert_invalid(synthetic_xml(), listing), "sifts-invalid-response")
+
+    def test_one_internal_residue_cannot_change_author_insertion_or_name(self):
+        for field, value in (("author_residue_number", "2"),
+                             ("author_insertion_code", "A"), ("residue_name", "ALA")):
+            listing = synthetic_listing()
+            residues = listing["1trz"]["molecules"][0]["chains"][0]["residues"]
+            duplicate = deepcopy(residues[0])
+            duplicate[field] = value
+            residues.append(duplicate)
+            with self.subTest(field=field):
+                self.assertEqual(self.assert_invalid(synthetic_xml(), listing), "sifts-invalid-response")
+
+    def test_chain_copies_must_agree_on_the_same_reference_residue(self):
+        root = ET.fromstring(XML)
+        ns = f"{{{SIFTS_NAMESPACE}}}"
+        copy = root.findall(ns + "entity")[2]
+        reference = next(ref for ref in copy.iter(ns + "crossRefDb") if ref.get("dbSource") == "UniProt")
+        reference.set("dbResName", "A")
+        self.assertEqual(self.assert_invalid(ET.tostring(root)), "sifts-invalid-response")
+
+    def test_observation_belongs_to_coordinates_not_the_uniprot_accession(self):
+        root = ET.fromstring(synthetic_xml())
+        ns = f"{{{SIFTS_NAMESPACE}}}"
+        group = next(root.iter(ns + "listResidue"))
+        duplicate = deepcopy(group[0])
+        reference = next(ref for ref in duplicate.iter(ns + "crossRefDb") if ref.get("dbSource") == "UniProt")
+        reference.set("dbAccessionId", "P01308-2")
+        # Two references can have different residues; their coordinate absence cannot differ.
+        reference.set("dbResName", "A")
+        group.append(duplicate)
+        valid = normalise_mapping(ET.tostring(root), synthetic_listing(), "1TRZ")
+        self.assertEqual([(row.accession, row.residue) for row in valid.rows], [("P01308", "G"), ("P01308-2", "A")])
+        detail = ET.SubElement(duplicate, ns + "residueDetail", {"dbSource": "PDBe", "property": "Annotation"})
+        detail.text = "Not_Observed"
+        self.assertEqual(self.assert_invalid(ET.tostring(root), synthetic_listing()), "sifts-invalid-response")
+
+    def test_agreeing_overlapping_segments_preserve_all_provenance(self):
+        root = ET.fromstring(synthetic_xml())
+        ns = f"{{{SIFTS_NAMESPACE}}}"
+        entity = next(root.iter(ns + "entity"))
+        duplicate = deepcopy(entity[0])
+        duplicate.set("segId", "overlapping")
+        entity.append(duplicate)
+        result = normalise_mapping(ET.tostring(root), synthetic_listing(), "1TRZ")
+        self.assertEqual([row.segment_id for row in result.rows], ["synthetic", "overlapping"])
+        self.assertEqual(result.rows[0].position, result.rows[1].position)
+
     def test_dtd_is_rejected_before_entity_expansion_including_utf16(self):
         document = '<!DOCTYPE entry [<!ENTITY payload "private-file-or-bomb">]>' + synthetic_xml().decode()
         for encoding in ("utf-8", "utf-16"):

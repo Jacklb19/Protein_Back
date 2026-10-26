@@ -13,6 +13,8 @@ El XML SIFTS aporta correspondencias explícitas por residuo entre PDB y UniProt
 
 `normalise_mapping` produce el esquema interno v1 compatible con `residueMappingSchema` del frontend: `version`, `pdbId`, `provenance` y `rows`. Cada fila conserva accession exacta, posición UniProt, residuo, segmento y dirección estructural. Mantiene copias de cadenas como alternativas, en lugar de escoger una silenciosamente. Rechaza identidades duplicadas ambiguas y anotaciones contradictorias. La ausencia explícita `Not_Observed` no se confunde con el `observed_ratio` de PDBe: las coordenadas efectivamente observadas y el modelo los determina el visor.
 
+El listado completo debe asignar una sola entidad/cadena de autor a cada cadena interna, y una sola identidad de autor/inserción/nombre a cada posición interna. Las copias de cadenas deben coincidir en el residuo de una misma accession/posición UniProt. La ausencia anotada pertenece a la dirección estructural y debe coincidir aunque cambie la referencia. Se conservan referencias distintas y segmentos solapados coincidentes, sin convertir diferencias legítimas entre accessions en contradicciones.
+
 El módulo no obtiene ni certifica la versión/hash de la secuencia UniProt completa. El futuro servicio tendrá que comprobar esa referencia y la procedencia exacta antes de vincular el mapeo al editor. Las filas de una referencia no validan por sí mismas la identidad de posiciones ajenas a su cobertura. El [núcleo frontend](../../frontend/docs/references.md) y el puente de selección todavía no están activados en Biblioteca.
 
 ## Límites y transporte
@@ -27,7 +29,7 @@ Estos límites de **adquisición** no amplían el máximo global de **2.000.000 
 
 ## Comprobación y repetición
 
-Pruebas con transporte simulado: reconciliación de los [ocho residuos públicos reducidos](../tests/fixtures/sifts/README.md), cadenas repetidas, identificadores de autor/inserciones/isoformas, ausencias, datos contradictorios, estructura de XML, límites, entidades/DTD, integridad gzip, credenciales por defecto, redirecciones, JSON inválido, plazo y cancelación. No usan cuentas ni proveedores reales.
+22 pruebas con transporte simulado: reconciliación de los [ocho residuos públicos reducidos](../tests/fixtures/sifts/README.md), cadenas repetidas, identificadores de autor/inserciones/isoformas, ausencias, datos contradictorios, segmentos solapados, estructura de XML, límites, entidades/DTD, integridad gzip, credenciales por defecto, redirecciones, JSON inválido, plazo y cancelación. No usan cuentas ni proveedores reales.
 
 Ejecutar desde backend:
 
@@ -45,6 +47,8 @@ La comprobación manual pública (dos GET, sin credenciales ni secuencias privad
 La utilidad usa certificados/nombre de host verificados con el almacén de confianza del sistema; no carga `.env`. Guarda el documento en `artifacts/sifts/1trz.mapping.json`, ignorado, e imprime solo resumen, tamaño y hash. No es una prueba de carga.
 
 El 25 de octubre se obtuvieron **102 correspondencias** para 1TRZ/P01308, cadenas A/B/C/D, documento SIFTS de 2026-10-18. El JSON de esa lectura pasó el esquema v1 real del frontend. P01308:90 conserva las alternativas A/C; el ensayo del enlace con un subconjunto **sintético** de direcciones dio ambigüedad sin cadena y selección única al elegir A. No acredita un visor conectado al backend ni una nueva observación de coordenadas. Las pruebas previas del frontend sí analizaron su BinaryCIF público real.
+
+Las validaciones adicionales se comprobaron después contra el XML/listado completos ya descargados: conservan las 102 filas sin nuevas solicitudes. Batería backend de este cierre: 93 pruebas totales, 81 ejecutadas correctamente y 12 SQL omitidas sin base configurada.
 
 La batería completa del backend se ejecuta al cerrar; las pruebas PostgreSQL sin base configurada se declaran omitidas y no equivalen a verificación SQL nueva. No hay cambios de acceso a datos o migraciones en este módulo.
 

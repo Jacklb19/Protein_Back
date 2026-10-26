@@ -153,6 +153,8 @@ def _listing_index(listing, pdb_id: str, limits: SourceLimits, deadline: float |
     molecules = _array(_object(_object(listing).get(pdb_id.lower())).get("molecules"), limits.residues)
     # Full corroborated identity makes each join constant-time even for duplicate input rows.
     lookup: dict[tuple[str, int, str, str], tuple[str, str, str | None, str] | None] = {}
+    chain_identities: dict[str, tuple[str, str]] = {}
+    residue_identities: dict[tuple[str, int], tuple[str | None, str, str]] = {}
     count = chains = 0
     for molecule in molecules:
         _check_deadline(deadline)
@@ -165,6 +167,10 @@ def _listing_index(listing, pdb_id: str, limits: SourceLimits, deadline: float |
                 raise SiftsError("sifts-source-too-large")
             auth_chain = _text(_object(chain).get("chain_id"))
             label_chain = _text(chain.get("struct_asym_id"))
+            chain_identity = (entity, auth_chain)
+            if label_chain in chain_identities and chain_identities[label_chain] != chain_identity:
+                raise SiftsError("sifts-invalid-response")
+            chain_identities[label_chain] = chain_identity
             for item in _array(chain.get("residues"), limits.residues):
                 count += 1
                 if count % 256 == 0:
@@ -180,7 +186,13 @@ def _listing_index(listing, pdb_id: str, limits: SourceLimits, deadline: float |
                 if not isinstance(insertion, str) or len(insertion) > 16:
                     raise SiftsError("sifts-invalid-response")
                 author_number = "null" if author is None else author + insertion
-                key = (auth_chain, label, author_number, _text(item.get("residue_name")))
+                name = _text(item.get("residue_name"))
+                residue_key = (label_chain, label)
+                residue_identity = (author, insertion, name)
+                if residue_key in residue_identities and residue_identities[residue_key] != residue_identity:
+                    raise SiftsError("sifts-invalid-response")
+                residue_identities[residue_key] = residue_identity
+                key = (auth_chain, label, author_number, name)
                 row = (entity, label_chain, author, insertion)
                 # Keep ambiguity explicit without accumulating an unbounded candidate list.
                 lookup[key] = None if key in lookup else row
@@ -218,6 +230,8 @@ def normalise_mapping(xml: bytes, listing: object, pdb_id: str, *,
         lookup = _listing_index(listing, pdb_id, limits, _deadline)
         rows: list[ResidueRow] = []
         seen = {}
+        observations: dict[tuple[str, int], bool] = {}
+        reference_residues: dict[tuple[str, int], str] = {}
         residue_count = 0
         for entity in root.findall(ns + "entity"):
             for segment in entity.findall(ns + "segment"):
@@ -251,6 +265,10 @@ def normalise_mapping(xml: bytes, listing: object, pdb_id: str, *,
                         absent = any(item.get("dbSource") == "PDBe" and item.get("property") == "Annotation"
                                      and (item.text or "").strip().lower() == "not_observed"
                                      for item in residue.findall(ns + "residueDetail"))
+                        coordinate_key = (label_chain, label)
+                        if coordinate_key in observations and observations[coordinate_key] != absent:
+                            raise SiftsError("sifts-invalid-response")
+                        observations[coordinate_key] = absent
                         for ref in uniprot:
                             if len(rows) >= limits.residues or ref.get("dbCoordSys") != "UniProt":
                                 raise SiftsError("sifts-invalid-response")
@@ -260,6 +278,10 @@ def normalise_mapping(xml: bytes, listing: object, pdb_id: str, *,
                                              accession=_attribute(ref, "dbAccessionId"),
                                              position=_integer(ref, "dbResNum", MAX_RESIDUE_NUMBER),
                                              residue=_attribute(ref, "dbResName"), not_observed=absent)
+                            reference_key = (row.accession, row.position)
+                            if reference_key in reference_residues and reference_residues[reference_key] != row.residue:
+                                raise SiftsError("sifts-invalid-response")
+                            reference_residues[reference_key] = row.residue
                             identity = (entity_id, label_chain, auth_chain, label, author, insertion, row.accession, row.position)
                             annotation = (row.residue, row.not_observed)
                             if identity in seen and seen[identity] != annotation:
@@ -268,7 +290,9 @@ def normalise_mapping(xml: bytes, listing: object, pdb_id: str, *,
                             rows.append(row)
         # A UniProt cross-reference in an unsupported XML layout must not become "no mapping".
         references = 0
-        for item in root.iter():
+        for index, item in enumerate(root.iter()):
+            if index % 256 == 0:
+                _check_deadline(_deadline)
             if item.tag.rsplit("}", 1)[-1] == "crossRefDb" and item.get("dbSource") == "UniProt":
                 if item.tag != ns + "crossRefDb":
                     raise SiftsError("sifts-invalid-response")
