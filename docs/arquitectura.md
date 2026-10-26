@@ -1,5 +1,9 @@
 # Arquitectura del backend
 
+## Continuación del 25 de octubre de 2026
+
+La publicación de proyectos/laboratorio/asistente se completó el 23 de octubre; las entradas inferiores conservan sus estados anteriores. La lectura autenticada de Groq en producción aún no se ha comprobado. Se añade localmente [adquisición y normalización SIFTS](sifts.md): fuentes públicas acotadas, identidades por residuo y compatibilidad con el núcleo frontend. Es una función interna probada, no una ruta activa ni un cambio de contrato, esquema o permisos. Falta acordar el suministro autenticado y su enlace visual antes de activar la selección general. Sin inferencia estructural desde la aplicación, migraciones nuevas o publicación de esta continuación.
+
 Actualización del 23 oct 2026: el laboratorio ya está publicado y el recorrido real del 22 oct está registrado en [activación](../../frontend/docs/laboratory-activation.md); aislamiento por ID con la segunda cuenta sigue pendiente. El asistente de interpretación está implementado localmente por REST/Connect/gRPC-Web, con Groq, cuota por identidad y comprobación de cifras; [contrato, límites y publicación](assistant.md). La interfaz aprobada solo envía cifras. Inferencia estructural desde la aplicación y `DesignService` continúan sin implementar. Los apartados fechados inferiores conservan la preparación anterior y no autorizan futuras operaciones remotas.
 
 Las API de prueba alojadas de NVIDIA se limitan a evaluación interna; una web académica abierta a usuarios reales no queda autorizada por no cobrar. Revisión completa de términos, recomendación de ensayo solo para el propietario y advertencia de endpoint ESMFold obsoleto en [inferencia desde la app](../../frontend/docs/app-inference-proposal.md). No hay integración NVIDIA implementada ni contratos aceptados.
