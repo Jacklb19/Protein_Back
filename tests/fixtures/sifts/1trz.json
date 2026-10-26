@@ -1,0 +1,96 @@
+{
+  "1trz": {
+    "molecules": [
+      {
+        "entity_id": 1,
+        "chains": [
+          {
+            "struct_asym_id": "A",
+            "residues": [
+              {
+                "residue_number": 1,
+                "residue_name": "GLY",
+                "author_residue_number": 1,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              },
+              {
+                "residue_number": 21,
+                "residue_name": "ASN",
+                "author_residue_number": 21,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              }
+            ],
+            "chain_id": "A"
+          },
+          {
+            "struct_asym_id": "C",
+            "residues": [
+              {
+                "residue_number": 1,
+                "residue_name": "GLY",
+                "author_residue_number": 1,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              },
+              {
+                "residue_number": 21,
+                "residue_name": "ASN",
+                "author_residue_number": 21,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              }
+            ],
+            "chain_id": "C"
+          }
+        ]
+      },
+      {
+        "entity_id": 2,
+        "chains": [
+          {
+            "struct_asym_id": "B",
+            "residues": [
+              {
+                "residue_number": 1,
+                "residue_name": "PHE",
+                "author_residue_number": 1,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              },
+              {
+                "residue_number": 30,
+                "residue_name": "THR",
+                "author_residue_number": 30,
+                "author_insertion_code": "",
+                "observed_ratio": 0.75
+              }
+            ],
+            "chain_id": "B"
+          },
+          {
+            "struct_asym_id": "D",
+            "residues": [
+              {
+                "residue_number": 1,
+                "residue_name": "PHE",
+                "author_residue_number": 1,
+                "author_insertion_code": "",
+                "observed_ratio": 1
+              },
+              {
+                "residue_number": 30,
+                "residue_name": "THR",
+                "author_residue_number": 30,
+                "author_insertion_code": "",
+                "observed_ratio": 0.5
+              }
+            ],
+            "chain_id": "D"
+          }
+        ]
+      }
+    ]
+  }
+}

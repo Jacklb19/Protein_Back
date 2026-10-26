@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<entry xmlns="http://www.ebi.ac.uk/pdbe/docs/sifts/eFamily.xsd" dbAccessionId="1trz" date="2026-10-18">
+<entity type="protein" entityId="A"><segment segId="1trz_A_1_21"><listResidue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="1" dbResName="GLY">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="1" dbResName="GLY" dbChainId="A"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="90" dbResName="G"/>
+        </residue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="21" dbResName="ASN">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="21" dbResName="ASN" dbChainId="A"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="110" dbResName="N"/>
+        </residue>
+</listResidue></segment></entity>
+<entity type="protein" entityId="B"><segment segId="1trz_B_1_30"><listResidue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="1" dbResName="PHE">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="1" dbResName="PHE" dbChainId="B"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="25" dbResName="F"/>
+        </residue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="30" dbResName="THR">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="30" dbResName="THR" dbChainId="B"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="54" dbResName="T"/>
+        </residue>
+</listResidue></segment></entity>
+<entity type="protein" entityId="C"><segment segId="1trz_C_1_21"><listResidue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="1" dbResName="GLY">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="1" dbResName="GLY" dbChainId="C"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="90" dbResName="G"/>
+        </residue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="21" dbResName="ASN">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="21" dbResName="ASN" dbChainId="C"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="110" dbResName="N"/>
+        </residue>
+</listResidue></segment></entity>
+<entity type="protein" entityId="D"><segment segId="1trz_D_1_30"><listResidue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="1" dbResName="PHE">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="1" dbResName="PHE" dbChainId="D"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="25" dbResName="F"/>
+        </residue>
+<residue dbSource="PDBe" dbCoordSys="PDBe" dbResNum="30" dbResName="THR">
+          <crossRefDb dbSource="PDB" dbCoordSys="PDBresnum" dbAccessionId="1trz" dbResNum="30" dbResName="THR" dbChainId="D"/>
+          <crossRefDb dbSource="UniProt" dbCoordSys="UniProt" dbAccessionId="P01308" dbResNum="54" dbResName="T"/>
+        </residue>
+</listResidue></segment></entity>
+</entry>
