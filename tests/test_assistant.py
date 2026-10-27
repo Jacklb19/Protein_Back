@@ -92,6 +92,33 @@ class AssistantTests(unittest.TestCase):
         self.assertIn("assistant-unverified-figure", result.text)
         self.assertNotIn("41,7", result.text)
 
+    def test_refuses_derived_proportions_even_when_every_written_figure_is_supported(self):
+        answers = [
+            "La identidad es 42 de 76, menos de la mitad de los residuos.",
+            "Hay cambios en más de la mitad de los residuos, con identidad 42 de 76.",
+            "The identity is 42 of 76, fewer than half of the residues.",
+            "Mean pLDDT is 93,39, so most residues have high confidence.",
+            "La mayoría de residuos tiene alta confianza, con media 93,39.",
+        ]
+        for answer in answers:
+            with self.subTest(answer=answer), self.client(lambda _: completion(answer)) as client:
+                result = self.post(client)
+            self.assertEqual(result.status_code, 502)
+            self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
+            self.assertNotIn(answer, result.text)
+
+    def test_preserves_a_verbal_quantity_explicitly_supplied_as_a_fact(self):
+        body = {**BODY, "facts": [*BODY["facts"], {"label": "Clasificación calculada", "value": "Más de la mitad"}]}
+        with self.client(lambda _: completion("Más de la mitad, según la clasificación recibida.")) as client:
+            result = self.post(client, body)
+        self.assertEqual(result.status_code, 200)
+
+    def test_rpc_refuses_the_same_unverified_verbal_proportion(self):
+        message = {"subject": "SUBJECT_LABORATORY", "language": "es", "facts": BODY["facts"]}
+        with self.client(lambda _: completion("La identidad es 42 de 76, menos de la mitad.")) as client:
+            result = client.post(f"{ASSISTANT}/Interpret", headers={**CONNECT, **TOKEN}, content=json.dumps(message))
+        self.assertEqual(result.json(), {"code": "unavailable", "message": "assistant-unverified-figure"})
+
     def test_translates_provider_failures_without_leaking_them(self):
         def timeout(_):
             raise httpx.ReadTimeout("slow")

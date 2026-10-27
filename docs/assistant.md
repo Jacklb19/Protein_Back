@@ -2,7 +2,19 @@
 
 Publicado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. La entrega posterior del 26 oct también está publicada, con CI correcta. La [interfaz A revisada y aprobada](../../frontend/docs/assistant-ui-proposal.md) aparece al pie de Analizar y Laboratorio y envía solo cifras, nunca la secuencia; [uso y diagnóstico actual](../../frontend/docs/assistant.md).
 
-## Qué hace
+## Comprobación real y proporciones verbales — 26 oct
+
+Con sesión del propietario, producción devolvió dos lecturas: insulina P01308 en Analizar y variante 1 pública de 1UBQ en Laboratorio. Variables y redespliegue actualizados por el propietario; esta comprobación no publicó código ni modificó secretos. El incidente anterior no se reproduce, pero no hay respuesta histórica para atribuir su causa. Presencia de la clave, uso real del servicio y validez científica de la prosa son comprobaciones distintas.
+
+La segunda lectura dijo que 42 de 76 era «menos de la mitad». Una prueba local real posterior con instrucciones reforzadas mantuvo cifras válidas pero dedujo mal la proporción de sustituciones. El verificador anterior aceptaba esa salida: reproducción offline `numeric_check=true`. La comprobación local nueva la rechaza: `verbal_proportion_check=false`, sin otra solicitud al proveedor.
+
+Además del prompt, `supported_proportions` comprueba una lista conservadora de expresiones en español/inglés (mitad, mayoría/minoría, tercio/cuarta parte y equivalentes). Solo admite expresiones presentes en valores de hechos recibidos; no calcula porcentajes ni cambios a partir de identidad, ni distribuciones de confianza a partir de una media. Usa el mismo rechazo `assistant-unverified-figure` (REST 502/RPC UNAVAILABLE), sin alterar contratos o presupuestos. No comprueba toda la semántica, puede rechazar prosa correcta y no garantiza ausencia de alucinaciones; no debilitarlo para obtener una respuesta positiva.
+
+Evidencia local ignorada: `artifacts/assistant-prompt-audit-2026-10-26-instruction-only-failed.json`, `assistant-verbal-guard-replay-2026-10-26.json` y `assistant-prompt-audit-2026-10-26.json`. Este último es una segunda llamada real local con cifras públicas, sin secuencia: el verificador la descartó en 1,576 s. No se conservó su texto descartado ni se atribuye el rechazo a una frase específica. Ninguna lectura nueva con la guardia se certificó como correcta en producción. Trece pruebas del asistente más seis del diagnóstico pasan (19), incluyendo los casos es/en observados, texto cualitativo suministrado y rechazo equivalente por RPC. Sin SQL, cambios remotos o publicación nueva.
+
+El cliente local del asistente espera ahora 40 s: identidad puede emplear 5 s y la llamada a Groq 30 s. El resto del cliente API conserva 10 s. El timeout HTTP del proveedor sigue siendo el existente de 30 s; no se amplía ni se presenta como plazo total estricto de una tarea.
+
+## Alcance de la interpretación
 
 Recibe resultados que el navegador ya calculó (descriptores, alineamiento, métricas del laboratorio o candidatos) como pares etiqueta/valor/unidad, tal como los muestra la interfaz, y devuelve una explicación breve en español o inglés. No calcula ciencia, no genera secuencias, no predice estructuras y no conversa: cada solicitud es independiente.
 
