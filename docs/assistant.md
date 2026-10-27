@@ -50,6 +50,23 @@ La API además **verifica las cifras** del texto: admite valores recibidos y su 
 - Producción, 26 oct: el backend está publicado, pero una lectura autenticada de cifras públicas mostró un error genérico. Sin respuesta RPC capturada, no se conoce su causa; configuración de clave y retención no verificadas. No atribuir éxito ni clave ausente por esa captura.
 - Diagnóstico local posterior: `assistant-not-configured` conserva HTTP 503 en REST y `FAILED_PRECONDITION`/9 en Connect y gRPC-Web, sin llamar al proveedor. El cliente omitía ese detalle y lo convertía en error desconocido; corrección local en frontend, sin cambiar contrato ni desactivar el verificador. El fallo real de producción sigue sin diagnóstico concluyente; [evidencia necesaria](../../frontend/docs/assistant.md#diagnóstico-local-del-26-oct-2026). Las pruebas usan identidad y proveedor simulados, sin consumo remoto.
 
-## Orden de publicación
+## Diagnóstico local sin llamadas a Groq — 26 oct
+
+`scripts/diagnose_assistant.py` comprueba presencia de configuración local o analiza el cuerpo guardado de un error. No abre conexiones, no ejecuta inferencia ni necesita credenciales. Devuelve solo códigos conocidos e instrucciones fijas; omite texto del proveedor, datos de respuesta y campos adicionales. Limita la lectura a 2.000.000 bytes y rechaza tramas incompletas o comprimidas.
+
+Desde la raíz del backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.diagnose_assistant --local-config
+.\.venv\Scripts\python.exe -m scripts.diagnose_assistant --response artifacts/assistant-error.bin --protocol grpc-web
+```
+
+La primera orden solo muestra `assistant_configured` e `identity_configured` del entorno **local**; no prueba Vercel ni la validez de la clave. La segunda lee únicamente el cuerpo de una respuesta fallida, guardado en `artifacts/`, fuera de Git. No guardar HAR, solicitudes ni cabeceras de autenticación. Para otros transportes elegir `--protocol connect` o `--protocol rest`; `--request-id` admite opcionalmente una referencia UUID. Una respuesta desconocida no demuestra éxito ni configuración correcta. `assistant-provider-error` aún requiere conocer el estado HTTP del proveedor en los logs; `assistant-rate-limit` por sí solo no distingue cuota propia de cuota de Groq.
+
+El navegador publicado se abrió sin sesión. El propietario indicó que iniciará sesión al llegar a casa; no se realizó una nueva lectura autenticada ni se confirmó la causa del incidente. El fallo sigue abierto. La corrección anterior de clasificación y esta herramienta permanecen locales y no requieren cambios de contrato ni migraciones.
+
+Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identidad/proveedor simulados; las seis del diagnóstico se repitieron tras endurecer el lector de tramas y pasan. Incluyen rechazo de cuerpos truncados, duplicados y excesivos, omisión de datos privados, presencia local sin llamada al proveedor y referencia inválida sin reflejar su valor. La ejecución real de `--local-config` informó ambos indicadores `true`; esto acredita presencia local, no validez de la clave ni configuración remota. Advertencia previa de Starlette/httpx conservada. Sin cambios del código servido ni pruebas nuevas de producción, SQL o CI.
+
+## Publicación de futuras correcciones
 
 La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.
