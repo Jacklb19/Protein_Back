@@ -182,17 +182,20 @@ Diferencias con el texto original: ninguna en campos ni límites. Precisiones: v
 
 Sin comprobar: Python 3.14 local (CI lo usa), PostgREST/Supabase remoto y la migración en Supabase, que **no está aplicada**. Orden de activación cuando haya autorización: migración → backend → pin y regeneración → frontend.
 
-## 6. Fase frontend pendiente
+## 6. Fase frontend
 
-Requiere su propia ejecución en `frontend/dev` cuando termine el rediseño en curso; la interfaz necesita además maqueta aprobada por el propietario.
+Autorizada por el propietario el 27 oct 2026 («Sí, continúa la fase frontend del historial en la misma sesión: contratos del cliente, appBuild, reproducción bajo demanda y la maqueta de interfaz para que yo la apruebe»). Implementada en frontend `dev` **sin ruta visible**; la interfaz espera la aprobación de la maqueta y la publicación del backend.
 
-1. Tras publicar el backend con autorización: actualizar el pin de `buf.gen.yaml` y regenerar `src/gen` sin editarlo a mano.
-2. Contratos del cliente: `workspaceSchema` con versión 1|2|3 y `generatorHistory`; validación Zod equivalente del sobre, documento y ejecución; preview con `generatorRuns`.
-3. `rpcMapping`: ida y vuelta de `generatorHistory` y `generator_runs`.
-4. `captureWorkspace` y equivalentes: versión = máximo entre la guardada y la mínima que exige el contenido; conservar laboratorio e historial leídos al guardar desde análisis, laboratorio o generador.
-5. Errores: añadir `project-requires-current-client` a los códigos de detalle RPC con su texto es/en.
-6. `appBuild`: inyectar el commit del build con Vite (`define`) y `null` si no existe.
-7. Guardar una ejecución: el texto exacto que hoy produce `download()`, su SHA-256, `recordedAt` y `selection`; comprobar topes antes de enviar y, si se exceden, pedir quitar ejecuciones concretas sin truncar.
-8. Reapertura y reproducción bajo demanda en Worker por ejecución, con aviso si no coincide.
-9. Interfaz con maqueta aprobada: dónde se guarda, a qué proyecto se vincula, cómo se quitan ejecuciones y cómo se muestra el rechazo; textos es/en en el mismo cambio.
-10. Pruebas: unitarias de contratos y mapeo, compatibilidad v1/v2/v3 en cliente (v2 rechaza abrir v3, copiar y renombrar no reescriben), reexportación byte a byte, E2E del recorrido nuevo a 360/1280 px, ambos temas, teclado y AA.
+Hecho:
+
+1. Código generado desde el protobuf local del backend (`e866e2e`), como en `0f3166e`. **El pin de `buf.gen.yaml` no cambia** hasta publicar el backend: la comprobación de código generado de CI fallaría si se publicara el frontend antes. Orden: migración → backend → repin y regeneración → frontend.
+2. Contratos del cliente (`36767fb`): `src/features/generator/history.ts` replica en Zod el sobre, el documento y la ejecución con los mismos topes, incluida la detección de claves repetidas; `workspaceSchema` acepta 1|2|3 con las reglas de cada versión; vista previa con `generatorRuns`; `rpcMapping` conserva `generatorHistory` y `generator_runs` de ida y vuelta.
+3. Guardado (`36767fb`): `captureWorkspace` y el guardado del laboratorio conservan laboratorio e historial y usan la versión máxima entre la guardada y la que exige el contenido; `withGeneratorHistory` añade o quita historial sin tocar el resto. Topes comprobados antes de enviar (`generator-history-size`), sin truncar ni descartar.
+4. Errores (`36767fb`): `project-requires-current-client` se distingue de `conflict` con textos es/en (`projects.requiresCurrentClient`, `generator.historySize`).
+5. `appBuild` (`a4f6fc1`): commit inyectado por Vite (`VERCEL_GIT_COMMIT_SHA` o `git rev-parse HEAD` de una copia limpia); `null` sin git o con cambios sin confirmar, sin romper el build.
+6. Reproducción bajo demanda (`66fb9df`): Worker propio que repite la búsqueda y la compara byte a byte o, si solo cambia el formato, valor a valor; progreso, cancelación, plazo y aviso de discrepancia sin modificar lo guardado.
+7. Corrección (`222dc05`): `createGeneratorRun` toma solo los campos de la ejecución.
+8. Pruebas: 489 unitarias en 83 archivos; cobertura 89,29 % líneas, 77,18 % ramas, 82,55 % funciones (mínimo 70 %) (exportaciones reales aceptadas byte a byte, mutaciones inválidas, límites exactos, compatibilidad v1/v2/v3, mapeo binario, guardado del laboratorio sobre v3, reproducción real coincidente). Tipos, lint, build y PWA correctos.
+9. Maqueta y plan por pantallas: [propuesta de interfaz](../../frontend/docs/generator-history-ui-proposal-2026-10-27.md), servida en el puerto 5361.
+
+Pendiente: aprobación de la maqueta; después, la interfaz (guardar, lista, quitar, reexportar, abrir y comprobar) con textos es/en y E2E del recorrido nuevo. Publicación y migración remota requieren autorización expresa.
