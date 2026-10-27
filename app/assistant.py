@@ -57,6 +57,8 @@ SYSTEM_PROMPT = """You explain protein analysis results to a student, in plain l
 Rules:
 - Write in {language}.
 - Use only the facts provided. Never compute, estimate or invent a figure; when you cite a number, copy it exactly as given.
+- Report fractions and positional identity as the supplied numerator and denominator. Do not convert them to percentages or describe them as more/less than half, a majority/minority, most/few, or a proportion; those are additional calculations, even when written without digits.
+- For positional identity, quote the supplied value without further discussion. Do not discuss the number or proportion of substitutions. Do not infer a distribution of residue confidence from its mean: a mean is not a count of residues in any confidence category.
 - Explain what the relevant measures mean and what these values suggest, with appropriate caution.
 - Never claim that a protein is functional, stable, active, novel, safe or likely to succeed experimentally. Descriptors and predictions are computational estimates, not experimental evidence.
 - Say what each measure reports, not what the protein is: "the instability index is below the threshold it uses", never "the protein is stable". Never extend a figure to solubility, aggregation, thermostability, expression, folding or behaviour in a cell, because none of these is measured here.
@@ -69,6 +71,7 @@ What the measures mean, so you explain them correctly:
 - pTM: the predictor's own estimate of how accurate its overall fold is (a predicted TM-score), from 0 to 1. It is not a comparison with known structures.
 - RMSD Cα: average distance in Å between corresponding alpha carbons after superposing two structures; lower means more similar geometry.
 - Positional identity: how many positions keep the same residue as the reference.
+- Protected positions: positions the user chose to keep fixed in a design. A count of zero means no positions are protected in that draft; it is not an alignment result or a detected structural feature.
 - Isoelectric point (pI): the pH at which the net charge is zero.
 - GRAVY: mean Kyte–Doolittle hydropathy; positive means hydrophobic on average, negative hydrophilic.
 - Instability index: a sequence-based estimate in which values above 40 suggest instability.
@@ -81,6 +84,9 @@ logger = logging.getLogger(__name__)
 FIGURE = re.compile(r"(?<![A-Za-z\d.,])\d+(?:[.,]\d+)*(?![A-Za-z\d])")
 # Typographic thousands separators ("8\u202f445,71"), joined so the figure is read whole.
 THOUSANDS_SPACE = re.compile(r"(?<=\d)[\u00a0\u202f](?=\d{3}(?!\d))")
+# These verbal quantities can invent a calculation without introducing a new digit.
+# Permit them only when the caller supplied that wording, just as with written figures.
+VERBAL_PROPORTION = re.compile(r"\b(?:(?:more|less|fewer)\s+than\s+(?:a\s+)?half|(?:m[aá]s|menos)\s+de\s+la\s+mitad|half|majority|minority|most|few|quarter|third|mitad|mayor[ií]a|minor[ií]a|tercio|cuarta\s+parte)\b", re.IGNORECASE)
 
 
 class Fact(Contract):
@@ -148,6 +154,12 @@ def known_figures(request: InterpretRequest) -> set[tuple[Decimal, int]]:
     return known | {(Decimal(value), 0) for value in SCALE_FIGURES}
 
 
+def supported_proportions(text: str, request: InterpretRequest) -> bool:
+    """Reject verbal quantities absent from fact values; this is not a full semantic verifier."""
+    given = {match.group().casefold() for fact in request.facts for match in VERBAL_PROPORTION.finditer(fact.value)}
+    return all(match.group().casefold() in given for match in VERBAL_PROPORTION.finditer(text))
+
+
 def messages(request: InterpretRequest) -> list[dict[str, str]]:
     facts = [fact.model_dump(exclude_none=True) for fact in request.facts]
     content = {"facts": facts, **({"sequence": request.sequence} if request.sequence else {})}
@@ -201,9 +213,9 @@ async def interpret(context: ServiceContext, request: InterpretRequest, requeste
         raise HTTPException(429, "assistant-rate-limit")
     text = await complete(context, request)
     known = known_figures(request)
-    if not all(supported(written, known) for written in figures(text)):
+    if not all(supported(written, known) for written in figures(text)) or not supported_proportions(text, request):
         # The answer is discarded rather than shown with a figure nobody computed.
-        logger.warning("Assistant answer cited a figure absent from its facts")
+        logger.warning("Assistant answer cited a figure or verbal proportion absent from its facts")
         raise HTTPException(502, "assistant-unverified-figure")
     return Interpretation(text=text, model=context.settings.assistant_model, created_at=datetime.now(timezone.utc).isoformat())
 

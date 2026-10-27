@@ -98,6 +98,9 @@ def workspace_document(workspace: workspace_pb.Workspace | None) -> dict[str, An
     if workspace.laboratory is not None:
         lab = workspace.laboratory
         document["laboratory"] = {"schemaVersion": lab.schema_version, "documentJson": lab.document_json, "documentSha256": lab.document_sha256}
+    if workspace.generator_history is not None:
+        history = workspace.generator_history
+        document["generatorHistory"] = {"schemaVersion": history.schema_version, "documentJson": history.document_json, "documentSha256": history.document_sha256}
     if workspace.source is not None:
         source = workspace.source
         document["source"] = {
@@ -209,6 +212,7 @@ def workspace_message(workspace: WorkspaceModel) -> workspace_pb.Workspace:
     descriptors = workspace.descriptors
     return workspace_pb.Workspace(
         laboratory=workspace_pb.LaboratorySnapshot(schema_version=1, document_json=workspace.laboratory.document_json, document_sha256=workspace.laboratory.document_sha256) if workspace.laboratory else None,
+        generator_history=workspace_pb.GeneratorHistorySnapshot(schema_version=1, document_json=workspace.generator_history.document_json, document_sha256=workspace.generator_history.document_sha256) if workspace.generator_history else None,
         schema_version=workspace.schema_version,
         profile_window=workspace.profile_window,
         source=source_message(workspace.source),
@@ -239,6 +243,7 @@ def summary_message(summary: SummaryModel) -> project_pb.ProjectSummary:
         preview = ProjectPreview(
             has_laboratory=workspace.laboratory is not None,
             laboratory_variants=len(json.loads(workspace.laboratory.document_json)["state"]["drafts"]) if workspace.laboratory else 0,
+            generator_runs=workspace.generator_history.run_count() if workspace.generator_history else 0,
             sequence_length=len(summary.active_sequence), sequence_prefix=summary.active_sequence[:cap],
             excluded=sum(residue in "UOBZX" for residue in summary.active_sequence),
             descriptors=workspace.descriptors.result if workspace.descriptors else None,
@@ -265,7 +270,7 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
     descriptors, alignment, source = preview.descriptors, preview.alignment, preview.source
     result = alignment.result if alignment else None
     return project_pb.ProjectPreview(
-        has_laboratory=preview.has_laboratory, laboratory_variants=preview.laboratory_variants,
+        has_laboratory=preview.has_laboratory, laboratory_variants=preview.laboratory_variants, generator_runs=preview.generator_runs,
         sequence_length=preview.sequence_length, sequence_prefix=preview.sequence_prefix, excluded=preview.excluded,
         descriptors=workspace_pb.DescriptorResult(
             mass_da=descriptors.mass_da, isoelectric_point=descriptors.isoelectric_point,

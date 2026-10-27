@@ -6,12 +6,13 @@ import "google/protobuf/timestamp.proto";
 
 // Snapshot of the work a project keeps: the active sequence's provenance, its calculated
 // descriptors and the current comparison. Mirrors the validated JSON workspace of
-// app/projects.py (schemaVersion 1 or 2). Results are stored only when they match their inputs;
+// app/projects.py (schemaVersion 1, 2 or 3). Results are stored only when they match their inputs;
 // the API rejects stale or inconsistent snapshots with INVALID_ARGUMENT.
 //
 // Alphabet: sequences use the 20 standard residues plus U, O, B, Z and X, uppercase.
 message Workspace {
-  // 1 for legacy snapshots; 2 when laboratory is present.
+  // 1 for legacy snapshots; 2 requires laboratory; 3 makes laboratory and generator_history
+  // optional. The server refuses to replace a stored version with a lower one.
   int32 schema_version = 1;
   // Hydropathy window in residues: 9 or 19.
   int32 profile_window = 2;
@@ -21,6 +22,8 @@ message Workspace {
   DescriptorSnapshot descriptors = 4;
   AlignmentSnapshot alignment = 5;
   LaboratorySnapshot laboratory = 6;
+  // Only with schema_version 3.
+  GeneratorHistorySnapshot generator_history = 7;
 }
 
 // Portable proteinforge-laboratory v1 JSON. Revalidated scientifically in a browser Worker.
@@ -28,6 +31,17 @@ message LaboratorySnapshot {
   // Always 1 for the envelope.
   int32 schema_version = 1;
   // At most 1,000,000 UTF-8 bytes; includes source and all drafts, no executable content.
+  string document_json = 2;
+  // Lowercase SHA-256 of the exact UTF-8 document_json bytes.
+  string document_sha256 = 3;
+}
+
+// Portable proteinforge-generator-history v1 JSON: up to 10 local generator runs, each the exact
+// exported result text identified by its SHA-256. Shape is validated; candidates are not recalculated.
+message GeneratorHistorySnapshot {
+  // Always 1 for the envelope.
+  int32 schema_version = 1;
+  // At most 100,000 UTF-8 bytes; each run's exported result at most 10,000 bytes.
   string document_json = 2;
   // Lowercase SHA-256 of the exact UTF-8 document_json bytes.
   string document_sha256 = 3;

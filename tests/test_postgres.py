@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 DATABASE = os.environ.get("PF_TEST_DATABASE_URL", "")
 PSQL = os.environ.get("PF_PSQL", "psql")
+MIGRATIONS = Path(__file__).resolve().parents[1] / "supabase/migrations"
 
 
 @unittest.skipUnless(DATABASE, "Disposable local PostgreSQL not configured; run scripts/test-postgres.ps1")
@@ -23,9 +24,11 @@ class PostgresSecurityTests(unittest.TestCase):
         if parsed.hostname not in ("127.0.0.1", "localhost") or parsed.path != "/pf_security_test":
             raise RuntimeError("Refusing to run database checks outside disposable local pf_security_test")
 
-    def sql(self, sql, user=None, role="authenticated", check=True):
+    def sql(self, sql, user=None, role="authenticated", check=True, stdin=False):
         prefix = f"set role {role}; set request.jwt.claim.sub = '{user or ''}';" if user is not None or role == "anon" else ""
-        process = subprocess.run([PSQL, DATABASE, "-X", "-v", "ON_ERROR_STOP=1", "-Atq", "-c", prefix + sql], capture_output=True, text=True)
+        # Large snapshots go through standard input: Windows limits a command line to 32,767 characters.
+        arguments, script = ([], prefix + sql) if stdin else (["-c", prefix + sql], None)
+        process = subprocess.run([PSQL, DATABASE, "-X", "-v", "ON_ERROR_STOP=1", "-Atq", *arguments], input=script, capture_output=True, text=True, encoding="utf-8")
         if check:
             self.assertEqual(process.returncode, 0, process.stderr)
         return process
@@ -134,9 +137,17 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertIsNone(preview["source"])
         self.assertIsNone(preview["alignment"]["result"])
 
+    def reapply(self, name, times=1):
+        """Reapply an older migration, then every later one, so the newest functions stay in force."""
+        migration = MIGRATIONS / name
+        for _ in range(times):
+            self.sql(migration.read_text(encoding="utf-8"))
+        for later in sorted(MIGRATIONS.glob("*.sql")):
+            if later.name > name:
+                self.sql(later.read_text(encoding="utf-8"))
+
     def test_preview_migration_is_idempotent_and_query_bounds_are_enforced(self):
-        migration = Path(__file__).resolve().parents[1] / "supabase/migrations/20261019000001_project_previews.sql"
-        self.sql(migration.read_text(encoding="utf-8"))
+        self.reapply("20261019000001_project_previews.sql")
         self.assertEqual(self.listing()[0]["id"], self.id)
         for args in ["0,0,'','recent',40", "1,0,'','unknown',40", "1,0,'','recent',41", "1,-1,'','recent',40"]:
             self.assertNotEqual(self.sql(f"select * from public.pf_list_projects({args});", self.owner, check=False).returncode, 0)
@@ -177,8 +188,7 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertIn('Project changed',stale.stderr)
 
     def test_laboratory_sql_validation_size_hash_and_migration_idempotence(self):
-        migration=Path(__file__).resolve().parents[1]/'supabase/migrations/20261021000000_laboratory_projects.sql'
-        self.sql(migration.read_text(encoding='utf-8'));self.sql(migration.read_text(encoding='utf-8'))
+        self.reapply('20261021000000_laboratory_projects.sql',times=2)
         snapshot=json.loads(self.lab_snapshot());snapshot['laboratory']['documentSha256']='0'*64
         denied=self.sql(f"select public.pf_save_project('{self.id}','Invalid','ACD','{json.dumps(snapshot)}','{self.version}');",self.owner,check=False)
         self.assertIn('Invalid laboratory',denied.stderr)
@@ -186,3 +196,95 @@ class PostgresSecurityTests(unittest.TestCase):
         too_large=self.sql("select public.pf_save_project(null,'Too large','ACD',jsonb_build_object('schemaVersion',2,'laboratory',jsonb_build_object('schemaVersion',1,'documentJson',repeat(' ',1000001),'documentSha256','bad')),null);",self.owner,check=False)
         self.assertIn('Invalid laboratory',too_large.stderr)
         self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout),self.project)
+
+    def history_snapshot(self, version=3, laboratory=False, history=None):
+        from test_generator_history import envelope
+        from test_laboratory import envelope as laboratory_envelope
+        workspace=json.loads(self.snapshot)
+        workspace.update(schemaVersion=version, generatorHistory=envelope() if history is None else history)
+        if laboratory:
+            workspace['laboratory']=laboratory_envelope()
+        return json.dumps(workspace)
+
+    def save(self, snapshot, version=None, name='Study', user=None, check=True):
+        """Update this project with a known version, or create one when version is False."""
+        target, expected = ("null", "null") if version is False else (f"'{self.id}'", f"'{version or self.version}'")
+        # Dollar quoting keeps exported JSON text intact; the payload contains no "$pf$".
+        return self.sql(f"select public.pf_save_project({target},'{name}','ACD',$pf${snapshot}$pf$::jsonb,{expected});", user or self.owner, check=check, stdin=True)
+
+    def test_generator_history_round_trip_rls_copy_and_compact_listing(self):
+        snapshot=self.history_snapshot(laboratory=True)
+        saved=json.loads(self.save(snapshot).stdout)
+        opened=json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout)
+        self.assertEqual(opened['workspace'],json.loads(snapshot))
+        preview=self.listing()[0]['preview']
+        self.assertEqual((preview['generatorRuns'],preview['hasLaboratory'],preview['laboratoryVariants']),(1,True,1))
+        self.assertNotIn('resultJson',json.dumps(self.listing()))
+        self.assertEqual(self.listing(user=self.other),[])
+        self.assertEqual(self.sql(f"select public.pf_project_document('{self.id}') is null;",self.other).stdout.strip(),'t')
+        self.assertIn('Project not found',self.save(snapshot,saved['updatedAt'],'Stolen',user=self.other,check=False).stderr)
+        copied=json.loads(self.save(snapshot,False,'Copy').stdout)
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');",self.owner)
+        self.assertEqual(self.sql(f"select count(*) from public.analyses where project_id='{self.id}';").stdout.strip(),'0')
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{copied['id']}');",self.owner).stdout)['workspace'],json.loads(snapshot))
+
+    def test_generator_history_versions_are_monotonic_without_partial_writes(self):
+        laboratory=json.loads(self.history_snapshot(laboratory=True)); laboratory.pop('generatorHistory'); laboratory['schemaVersion']=2
+        upgraded=json.loads(self.save(json.dumps(laboratory)).stdout)
+        current=json.loads(self.save(self.history_snapshot(laboratory=True),upgraded['updatedAt']).stdout)
+        for older in [json.dumps(laboratory),self.snapshot]:
+            denied=self.save(older,current['updatedAt'],'Lost',check=False)
+            self.assertIn('Project requires current client',denied.stderr)
+            self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout),current)
+        without=json.loads(self.history_snapshot()); without.pop('generatorHistory')
+        kept=json.loads(self.save(json.dumps(without),current['updatedAt'],'Cleared').stdout)
+        self.assertEqual(kept['workspace']['schemaVersion'],3)
+        self.assertEqual(self.listing()[0]['preview']['generatorRuns'],0)
+        self.assertIn('Project changed',self.save(self.history_snapshot(),current['updatedAt'],check=False).stderr)
+        fresh=json.loads(self.save(self.history_snapshot(),False,'Created').stdout)
+        self.assertEqual(fresh['workspace']['schemaVersion'],3)
+
+    def test_two_simultaneous_history_writes_have_one_winner(self):
+        def write(name):
+            return self.save(self.history_snapshot(),name=name,check=False)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results=list(executor.map(write,['First','Second']))
+        self.assertEqual(sum(result.returncode==0 for result in results),1)
+        self.assertIn('Project changed',next(result.stderr for result in results if result.returncode!=0))
+
+    def test_generator_history_sql_validation_matches_contract(self):
+        from test_generator_history import envelope, history_document, run, variant
+        def document_with(change):
+            doc=history_document(); change(doc); return envelope(doc)
+        def result_without_length():
+            result=json.loads(variant(42)); result['parameters'].pop('length'); return json.dumps(result,indent=2)
+        cases={
+            'bad hash':(3,{**envelope(),'documentSha256':'0'*64}),
+            'version 2 history':(2,envelope()),
+            'version 1 history':(1,envelope()),
+            'wrong run id':(3,document_with(lambda d:d['runs'][0].update(id='0'*64))),
+            'eleven runs':(3,envelope(history_document([run(variant(seed)) for seed in range(1,12)]))),
+            'missing parameter':(3,envelope(history_document([run(result_without_length())]))),
+            'odd selection':(3,document_with(lambda d:d['runs'][0].update(selection={'x':1,'y':2}))),
+            'selection outside arm':(3,document_with(lambda d:d['runs'][0].update(selection={'arm':'reference','index':5}))),
+            'time without zone':(3,document_with(lambda d:d['runs'][0].update(recordedAt='2026-10-27T09:30:00'))),
+            'external origin':(3,document_with(lambda d:d['runs'][0].update(origin='design-service'))),
+        }
+        for name,(version,history) in cases.items():
+            with self.subTest(name):
+                denied=self.save(self.history_snapshot(version,laboratory=version==2,history=history),check=False)
+                self.assertNotEqual(denied.returncode,0)
+                self.assertIn('Invalid',denied.stderr)
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');",self.owner).stdout),self.project)
+        ten=self.history_snapshot(history=envelope(history_document([run(variant(seed)) for seed in range(1,11)])))
+        saved=json.loads(self.save(ten).stdout)
+        self.assertEqual(saved['workspace']['generatorHistory'],json.loads(ten)['generatorHistory'])
+        too_large=self.sql("select public.pf_save_project(null,'Too large','ACD',jsonb_build_object('schemaVersion',3,'generatorHistory',jsonb_build_object('schemaVersion',1,'documentJson',repeat(' ',100001),'documentSha256','bad')),null);",self.owner,check=False)
+        self.assertIn('Invalid generator history',too_large.stderr)
+
+    def test_generator_history_migration_is_idempotent_and_private(self):
+        self.reapply('20261027000000_generator_history.sql',times=2)
+        self.save(self.history_snapshot())
+        self.assertEqual(self.listing()[0]['preview']['generatorRuns'],1)
+        for function in ["public.pf_validate_generator_history('{}'::jsonb)","public.pf_generator_run_count('{}'::jsonb)"]:
+            self.assertNotEqual(self.sql(f"select {function};",role='anon',check=False).returncode,0)

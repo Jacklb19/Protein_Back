@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "methodVersion": "proteinforge-candidates-v1",
+  "parameters": {
+    "length": 40,
+    "budget": 1000,
+    "seed": 42,
+    "gravy": {
+      "enabled": true,
+      "minimum": -0.5,
+      "maximum": 0.5
+    },
+    "massDa": {
+      "enabled": false,
+      "minimum": 3000,
+      "maximum": 6000
+    }
+  },
+  "guided": {
+    "evaluations": 1000,
+    "matchingEvaluations": 751,
+    "bestLoss": 0,
+    "candidates": [
+      {
+        "sequence": "AAVGPKKIKRWNPPNGGLILRMNALMYMCPDKCGFPARQD",
+        "descriptors": {
+          "massDa": 4459.3505399999995,
+          "isoelectricPoint": 9.897470283508298,
+          "instabilityIndex": 78.96249999999999,
+          "aliphaticIndex": 66,
+          "gravy": -0.4149999999999999,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "ACDFEVMAKAYPYVADPECNMIISHWEPWGFPCLVKKPWI",
+        "descriptors": {
+          "massDa": 4686.516739999999,
+          "isoelectricPoint": 4.898514747619628,
+          "instabilityIndex": 48.245000000000005,
+          "aliphaticIndex": 70.74999999999999,
+          "gravy": 0.08999999999999996,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "ACDFEVMAKAYPYVADPELNMIISHWEPWGFPFYVKKPVI",
+        "descriptors": {
+          "massDa": 4703.5111400000005,
+          "isoelectricPoint": 4.898575401306151,
+          "instabilityIndex": 52.83025,
+          "aliphaticIndex": 78,
+          "gravy": 0.12999999999999995,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "ACDFEVMAKAYPYVADPELNYIIPHWEQWWFPFYVKKPVI",
+        "descriptors": {
+          "massDa": 4905.708340000001,
+          "isoelectricPoint": 4.898575401306151,
+          "instabilityIndex": 55.42274999999999,
+          "aliphaticIndex": 78,
+          "gravy": -0.030000000000000047,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "ACDFFVMAKAYPRVACPECDWIISSNEPWGKPCLVKKPWI",
+        "descriptors": {
+          "massDa": 4600.470139999999,
+          "isoelectricPoint": 7.8966871261596685,
+          "instabilityIndex": 65.80999999999999,
+          "aliphaticIndex": 70.74999999999999,
+          "gravy": 0.07500000000000001,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      }
+    ],
+    "minimumPairDistance": 0.1
+  },
+  "reference": {
+    "evaluations": 1000,
+    "matchingEvaluations": 488,
+    "bestLoss": 0,
+    "candidates": [
+      {
+        "sequence": "AARKVYCTAIGGKWIQFRIDAWGDGIHVLLQSMWTIQVNG",
+        "descriptors": {
+          "massDa": 4504.25294,
+          "isoelectricPoint": 9.198497200012206,
+          "instabilityIndex": 21.075,
+          "aliphaticIndex": 100,
+          "gravy": 0.19749999999999993,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "AEQFVVPPCEGEFCPRVLTPLKEEGCVGIWPEQTNTYDVQ",
+        "descriptors": {
+          "massDa": 4510.08764,
+          "isoelectricPoint": 4.058218574523925,
+          "instabilityIndex": 30.567500000000006,
+          "aliphaticIndex": 68,
+          "gravy": -0.31000000000000005,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "AFPMCMLGLVHEDSVMMEFRYKWECHWGQWDAWTQCVLPV",
+        "descriptors": {
+          "massDa": 4861.699639999999,
+          "isoelectricPoint": 4.865155220031738,
+          "instabilityIndex": 43.895,
+          "aliphaticIndex": 63.249999999999986,
+          "gravy": 0.06999999999999985,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "AGDHEAGYRNISVDGLLWEKCCFWCFLTWTDLGNLESLQS",
+        "descriptors": {
+          "massDa": 4579.112140000001,
+          "isoelectricPoint": 4.290643501281739,
+          "instabilityIndex": 33.945,
+          "aliphaticIndex": 80.50000000000001,
+          "gravy": -0.10750000000000022,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      },
+      {
+        "sequence": "AGETWSMQGRVLGTWWAMKHFISLQVVFRSVVVHFNGFNY",
+        "descriptors": {
+          "massDa": 4687.4220399999995,
+          "isoelectricPoint": 9.986934471130372,
+          "instabilityIndex": 0.8925000000000001,
+          "aliphaticIndex": 77.75,
+          "gravy": 0.2425,
+          "length": 40
+        },
+        "loss": 0,
+        "satisfies": true
+      }
+    ],
+    "minimumPairDistance": 0.825
+  },
+  "references": [
+    "https://research.ibm.com/publications/optimization-by-simulated-annealing",
+    "https://www.jstatsoft.org/article/view/v008i14",
+    "https://web.expasy.org/protparam/"
+  ]
+}

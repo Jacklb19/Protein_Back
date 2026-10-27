@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
+from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
 from .laboratory import LaboratorySnapshot
 from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
 
@@ -25,6 +26,8 @@ DEFAULT_PAGE_SIZE = 30
 MAX_PAGE_SIZE = 100
 MAX_OFFSET = 100_000
 DATA_TIMEOUT_SECONDS = 10.0
+# Fixed message of the SQL version guard (pf_save_project); never contains submitted data.
+REQUIRES_CURRENT_CLIENT_MESSAGE = "Project requires current client"
 Sequence = Annotated[str, StringConstraints(max_length=MAX_SEQUENCE_LENGTH, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")]
 AlignmentSequence = Annotated[str, StringConstraints(max_length=MAX_ALIGNMENT_LENGTH, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")]
 Token = Annotated[str, Depends(bearer_token)]
@@ -121,17 +124,21 @@ class SequenceSource(Contract):
 
 
 class Workspace(Contract):
-    schema_version: Literal[1, 2] = 1
+    # 1: analysis and comparison; 2: adds a required laboratory; 3: optional laboratory and generator history.
+    schema_version: Literal[1, 2, 3] = 1
     profile_window: Literal[9, 19] = 9
     source: SequenceSource | None = None
     descriptors: DescriptorSnapshot | None = None
     alignment: AlignmentSnapshot = Field(default_factory=AlignmentSnapshot)
     laboratory: LaboratorySnapshot | None = Field(default=None, exclude_if=lambda value: value is None)
+    generator_history: GeneratorHistorySnapshot | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def validate_version(self):
-        if (self.schema_version == 2) != (self.laboratory is not None):
+        if self.schema_version < 3 and (self.schema_version == 2) != (self.laboratory is not None):
             raise ValueError("Laboratory requires workspace version 2")
+        if self.schema_version < 3 and self.generator_history is not None:
+            raise ValueError("Generator history requires workspace version 3")
         return self
 
 
@@ -213,6 +220,7 @@ class ProjectAlignmentPreview(Contract):
 class ProjectPreview(Contract):
     has_laboratory: bool = False
     laboratory_variants: int = Field(default=0, ge=0, le=3)
+    generator_runs: int = Field(default=0, ge=0, le=MAX_RUNS)
     sequence_length: int = Field(ge=0, le=MAX_SEQUENCE_LENGTH)
     sequence_prefix: str = Field(max_length=PROJECT_PREVIEW_RESIDUES, pattern=r"^[ACDEFGHIKLMNPQRSTVWYUOBZX]*$")
     excluded: int = Field(ge=0)
@@ -266,12 +274,16 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
         raise HTTPException(401, "invalid-token", headers={"WWW-Authenticate": "Bearer"})
     if response.status_code >= 400:
         try:
-            code = response.json().get("code", "")
+            body = response.json()
+            code, message = body.get("code", ""), body.get("message", "")
         except (ValueError, AttributeError):
-            code = ""
+            code, message = "", ""
         if code in ("PGRST202", "PGRST205", "42P01", "42883"):
             raise HTTPException(503, "projects-schema-unavailable")
         if code == "PT409":
+            # A newer stored snapshot stays a conflict for current clients; its own code tells them apart.
+            if message == REQUIRES_CURRENT_CLIENT_MESSAGE:
+                raise HTTPException(409, "project-requires-current-client")
             raise HTTPException(409, "project-conflict")
         if code == "PT422":
             raise HTTPException(422, "validation")

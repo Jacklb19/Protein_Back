@@ -1,8 +1,20 @@
 # Asistente de interpretación
 
-Implementado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. Backend e interfaz están implementados localmente, sin publicar. La [interfaz A revisada y aprobada](../../frontend/docs/assistant-ui-proposal.md) aparece al pie de Analizar y Laboratorio y envía solo cifras, nunca la secuencia; [uso y activación](../../frontend/docs/assistant.md).
+Publicado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. La entrega posterior del 26 oct también está publicada, con CI correcta. La [interfaz A revisada y aprobada](../../frontend/docs/assistant-ui-proposal.md) aparece al pie de Analizar y Laboratorio y envía solo cifras, nunca la secuencia; [uso y diagnóstico actual](../../frontend/docs/assistant.md).
 
-## Qué hace
+## Comprobación real y proporciones verbales — 26 oct
+
+Con sesión del propietario, producción devolvió dos lecturas: insulina P01308 en Analizar y variante 1 pública de 1UBQ en Laboratorio. Variables y redespliegue actualizados por el propietario; esta comprobación no publicó código ni modificó secretos. El incidente anterior no se reproduce, pero no hay respuesta histórica para atribuir su causa. Presencia de la clave, uso real del servicio y validez científica de la prosa son comprobaciones distintas.
+
+La segunda lectura dijo que 42 de 76 era «menos de la mitad». Una prueba local real posterior con instrucciones reforzadas mantuvo cifras válidas pero dedujo mal la proporción de sustituciones. El verificador anterior aceptaba esa salida: reproducción offline `numeric_check=true`. La comprobación local nueva la rechaza: `verbal_proportion_check=false`, sin otra solicitud al proveedor.
+
+Además del prompt, `supported_proportions` comprueba una lista conservadora de expresiones en español/inglés (mitad, mayoría/minoría, tercio/cuarta parte y equivalentes). Solo admite expresiones presentes en valores de hechos recibidos; no calcula porcentajes ni cambios a partir de identidad, ni distribuciones de confianza a partir de una media. Usa el mismo rechazo `assistant-unverified-figure` (REST 502/RPC UNAVAILABLE), sin alterar contratos o presupuestos. No comprueba toda la semántica, puede rechazar prosa correcta y no garantiza ausencia de alucinaciones; no debilitarlo para obtener una respuesta positiva.
+
+Evidencia local ignorada: `artifacts/assistant-prompt-audit-2026-10-26-instruction-only-failed.json`, `assistant-verbal-guard-replay-2026-10-26.json` y `assistant-prompt-audit-2026-10-26.json`. Este último es una segunda llamada real local con cifras públicas, sin secuencia: el verificador la descartó en 1,576 s. No se conservó su texto descartado ni se atribuye el rechazo a una frase específica. Ninguna lectura nueva con la guardia se certificó como correcta en producción. Trece pruebas del asistente más seis del diagnóstico pasan (19), incluyendo los casos es/en observados, texto cualitativo suministrado y rechazo equivalente por RPC. Sin SQL, cambios remotos o publicación nueva.
+
+El cliente local del asistente espera ahora 40 s: identidad puede emplear 5 s y la llamada a Groq 30 s. El resto del cliente API conserva 10 s. El timeout HTTP del proveedor sigue siendo el existente de 30 s; no se amplía ni se presenta como plazo total estricto de una tarea.
+
+## Alcance de la interpretación
 
 Recibe resultados que el navegador ya calculó (descriptores, alineamiento, métricas del laboratorio o candidatos) como pares etiqueta/valor/unidad, tal como los muestra la interfaz, y devuelve una explicación breve en español o inglés. No calcula ciencia, no genera secuencias, no predice estructuras y no conversa: cada solicitud es independiente.
 
@@ -47,8 +59,26 @@ La API además **verifica las cifras** del texto: admite valores recibidos y su 
 
 - 70 pruebas del backend (12 SQL omitidas sin base): validación sin llamar al proveedor, clave del servidor y ausencia del token del usuario en la petición saliente, presupuesto, fallos del proveedor sin filtrar su texto, verificación de cifras (redondeos, convenciones, identificadores y cifras inventadas) y equivalencia REST, Connect y gRPC-Web. Buf lint correcto y `buf breaking` contra `main` sin roturas.
 - Tres llamadas reales locales a Groq el 23 oct con datos públicos de la variante 1 de 1UBQ (sin secuencia): las tres respondieron y pasaron la verificación de cifras (la primera no pudo mostrarse por la codificación de la consola de Windows; las otras tardaron 1,2–1,3 s). Sin glosario, el modelo definió mal el pTM como similitud con estructuras conocidas; con el glosario lo explica como confianza del modelo en el plegamiento global.
-- No comprobado: producción. Requiere publicar el backend y que `GROQ_API_KEY` exista en las variables del proyecto de Vercel; la clave local no viaja con el código.
+- Producción, 26 oct: el backend está publicado, pero una lectura autenticada de cifras públicas mostró un error genérico. Sin respuesta RPC capturada, no se conoce su causa; configuración de clave y retención no verificadas. No atribuir éxito ni clave ausente por esa captura.
+- Diagnóstico local posterior: `assistant-not-configured` conserva HTTP 503 en REST y `FAILED_PRECONDITION`/9 en Connect y gRPC-Web, sin llamar al proveedor. El cliente omitía ese detalle y lo convertía en error desconocido; corrección local en frontend, sin cambiar contrato ni desactivar el verificador. El fallo real de producción sigue sin diagnóstico concluyente; [evidencia necesaria](../../frontend/docs/assistant.md#diagnóstico-local-del-26-oct-2026). Las pruebas usan identidad y proveedor simulados, sin consumo remoto.
 
-## Orden de publicación
+## Diagnóstico local sin llamadas a Groq — 26 oct
 
-Tras autorización expresa: publicar backend primero (`dev`, merge y publicación de `main`), comprobar CI/despliegue y configuración del proveedor; luego actualizar el pin de `frontend/buf.gen.yaml` al commit backend publicado con este contrato, regenerar con `npx buf generate` y confirmar. Solo después publicar frontend. Su CI regenera desde el pin actual `5b6c4505c77293e1f4798e0bd86932e13c11600f`, que aún no tiene `AssistantService`: publicar los stubs nuevos con ese pin fallaría. Sin migraciones nuevas.
+`scripts/diagnose_assistant.py` comprueba presencia de configuración local o analiza el cuerpo guardado de un error. No abre conexiones, no ejecuta inferencia ni necesita credenciales. Devuelve solo códigos conocidos e instrucciones fijas; omite texto del proveedor, datos de respuesta y campos adicionales. Limita la lectura a 2.000.000 bytes y rechaza tramas incompletas o comprimidas.
+
+Desde la raíz del backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.diagnose_assistant --local-config
+.\.venv\Scripts\python.exe -m scripts.diagnose_assistant --response artifacts/assistant-error.bin --protocol grpc-web
+```
+
+La primera orden solo muestra `assistant_configured` e `identity_configured` del entorno **local**; no prueba Vercel ni la validez de la clave. La segunda lee únicamente el cuerpo de una respuesta fallida, guardado en `artifacts/`, fuera de Git. No guardar HAR, solicitudes ni cabeceras de autenticación. Para otros transportes elegir `--protocol connect` o `--protocol rest`; `--request-id` admite opcionalmente una referencia UUID. Una respuesta desconocida no demuestra éxito ni configuración correcta. `assistant-provider-error` aún requiere conocer el estado HTTP del proveedor en los logs; `assistant-rate-limit` por sí solo no distingue cuota propia de cuota de Groq.
+
+El navegador publicado se abrió sin sesión. El propietario indicó que iniciará sesión al llegar a casa; no se realizó una nueva lectura autenticada ni se confirmó la causa del incidente. El fallo sigue abierto. La corrección anterior de clasificación y esta herramienta permanecen locales y no requieren cambios de contrato ni migraciones.
+
+Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identidad/proveedor simulados; las seis del diagnóstico se repitieron tras endurecer el lector de tramas y pasan. Incluyen rechazo de cuerpos truncados, duplicados y excesivos, omisión de datos privados, presencia local sin llamada al proveedor y referencia inválida sin reflejar su valor. La ejecución real de `--local-config` informó ambos indicadores `true`; esto acredita presencia local, no validez de la clave ni configuración remota. Advertencia previa de Starlette/httpx conservada. Sin cambios del código servido ni pruebas nuevas de producción, SQL o CI.
+
+## Publicación de futuras correcciones
+
+La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.
