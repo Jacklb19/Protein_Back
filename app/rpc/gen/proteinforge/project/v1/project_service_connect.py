@@ -38,8 +38,9 @@ class ProjectService(Protocol):
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
-    ABORTED (concurrent change), FAILED_PRECONDITION (persistence schema not available on this
-    server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
+    ABORTED (concurrent change, or "project-requires-current-client" when the stored snapshot
+    has a newer schema version than the one sent), FAILED_PRECONDITION (persistence schema not
+    available on this server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
     Equivalent REST routes: /v1/projects.
     """
     async def list_projects(self, request: ListProjectsRequest, ctx: RequestContext[ListProjectsRequest, ListProjectsResponse], /) -> ListProjectsResponse:
@@ -161,8 +162,9 @@ class ProjectServiceClient(ConnectClient):
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
-    ABORTED (concurrent change), FAILED_PRECONDITION (persistence schema not available on this
-    server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
+    ABORTED (concurrent change, or "project-requires-current-client" when the stored snapshot
+    has a newer schema version than the one sent), FAILED_PRECONDITION (persistence schema not
+    available on this server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
     Equivalent REST routes: /v1/projects.
     """
     async def list_projects(
@@ -292,8 +294,9 @@ class ProjectServiceSync(Protocol):
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
-    ABORTED (concurrent change), FAILED_PRECONDITION (persistence schema not available on this
-    server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
+    ABORTED (concurrent change, or "project-requires-current-client" when the stored snapshot
+    has a newer schema version than the one sent), FAILED_PRECONDITION (persistence schema not
+    available on this server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
     Equivalent REST routes: /v1/projects.
     """
     def list_projects(self, request: ListProjectsRequest, ctx: RequestContext[ListProjectsRequest, ListProjectsResponse], /) -> ListProjectsResponse:
@@ -413,8 +416,9 @@ class ProjectServiceClientSync(ConnectClientSync):
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
-    ABORTED (concurrent change), FAILED_PRECONDITION (persistence schema not available on this
-    server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
+    ABORTED (concurrent change, or "project-requires-current-client" when the stored snapshot
+    has a newer schema version than the one sent), FAILED_PRECONDITION (persistence schema not
+    available on this server), PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data service unreachable).
     Equivalent REST routes: /v1/projects.
     """
     def list_projects(
