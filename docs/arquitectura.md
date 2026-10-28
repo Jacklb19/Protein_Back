@@ -1,5 +1,13 @@
 # Arquitectura del backend
 
+## Estado del 28 de octubre de 2026
+
+Publicado `main` `18d9444` con CI y Vercel correctos; `dev` está en `acfea11`. La entrega publicada el 27 de octubre incluye el historial del generador: workspace v3 con el historial dentro del snapshot existente, guardia monótona y el código `project-requires-current-client`. No añade tablas, columnas, políticas ni Storage. [Contrato y decisiones](generator-history-contract-proposal.md).
+
+El backend publicado funciona con o sin la migración `20261027000000_generator_history.sql`: sin ella, el recuento de búsquedas vale cero y el SQL anterior rechaza los snapshots v3, de modo que la interfaz permanece oculta. El propietario declara haber aplicado esa migración en Supabase remoto el 28 de octubre; queda registrado como su declaración, sin inspección remota por nuestra parte, y no debe repetirse. Para que la aplicación ofrezca el guardado falta además activar `VITE_GENERATOR_HISTORY=enabled` en el proyecto de Vercel del frontend, que es trabajo del propietario.
+
+Verificación vigente del repositorio: `python -m unittest discover -s tests` con 130 pruebas correctas y 17 SQL omitidas sin base configurada, como en CI con Python 3.14. Pendientes reales: recorrido con JWT real y PostgREST, aislamiento por ID con una segunda cuenta y comprobación de la prosa del asistente. Por decisión del propietario del 28 de octubre, la inferencia estructural desde la aplicación queda aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y el diseño de forma nueva queda fuera del alcance; el cuaderno manual de Colab es la vía oficial y el frontend importa sus resultados. Las secciones siguientes conservan el histórico anterior.
+
 ## Continuación del 26 de octubre de 2026
 
 La publicación de proyectos/laboratorio/asistente se completó el 23 de octubre; las entradas fechadas inferiores conservan sus estados anteriores. La lectura autenticada de Groq en producción aún no se ha comprobado. El propietario aprobó la maqueta y el suministro SIFTS: implementados localmente adquisición/normalización, comprobación de referencia completa, caché pública acotada por proceso y rutas autenticadas REST/RPC. [Contrato y evidencia](sifts.md). La interfaz Biblioteca/Analizar está integrada y verificada localmente, con identidad simulada. Sin inferencia estructural desde la aplicación, migraciones nuevas o publicación de esta continuación. Backend nuevo debe publicarse primero; repinchar/regenerar frontend después.
@@ -14,7 +22,7 @@ Contrato aprobado e implementado localmente dentro del snapshot existente en ana
 
 ## Estado
 
-API: health/me, CRUD proyectos, persistencia del laboratorio, UniProt e interpretación ya publicados. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Migración del laboratorio aplicada por el propietario y recorrido real registrado; no repetirla. SIFTS está integrado solo localmente y falta su recorrido con JWT real. RLS/concurrencia PostgreSQL 18 comprobados en la entrega previa, sin nueva ejecución SQL en esta continuación. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md), [carga HTTP local con proveedores simulados](local-api-load.md).
+API: health/me, CRUD proyectos, persistencia del laboratorio, UniProt, interpretación, SIFTS autenticado e historial del generador ya publicados. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Migraciones del laboratorio y del historial aplicadas por el propietario; no repetirlas. Falta el recorrido con JWT real de SIFTS y del historial. RLS/concurrencia PostgreSQL 18 comprobados en la entrega previa, sin nueva ejecución SQL en esta continuación. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md), [carga HTTP local con proveedores simulados](local-api-load.md).
 
 ## Responsabilidades
 
@@ -47,4 +55,4 @@ La petición posterior autoriza push de dev de ambos repositorios solo con autor
 
 ## Pruebas
 
-unittest: 26 pruebas HTTP/contratos/RLS estático pasan con transporte simulado; seis SQL omitidas sin base configurada. scripts/test-postgres.ps1 ejecutó las seis con PostgreSQL 18 temporal real y Auth.uid emulado: propietario/anónimo/transferencia/cascada/rollback/concurrencia. No certifica JWT/PostgREST remoto. Entorno local Python 3.13; objetivo 3.14 aún sin ejecutar. Adaptador UniProt probado adicionalmente con datos públicos reales, sin credenciales.
+unittest: 130 pruebas correctas y 17 SQL omitidas sin base configurada, con transporte simulado; comprobado el 28 de octubre en local y ejecutado también por CI con Python 3.14. Cubre auditoría estática, REST, RPC, proyectos, SIFTS, asistente e historial del generador. `scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en un PostgreSQL temporal real con Auth.uid emulado: propietario, anónimo, transferencia, cascada, rollback y concurrencia. No certifica JWT ni PostgREST remotos. Adaptador UniProt probado además con datos públicos reales, sin credenciales.
