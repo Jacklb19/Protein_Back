@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
 from ..assistant import InterpretRequest, interpret
+from ..folding import predict
+from ..folding_models import FoldRequest
 from ..config import Settings
 from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
@@ -24,6 +27,7 @@ from .gen.proteinforge.account.v1 import account_service_pb as account_pb
 from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.reference.v1 import reference_service_pb as reference_pb
+from .gen.proteinforge.folding.v1 import folding_service_pb as folding_pb
 
 AUTHORIZATION_HEADER = "authorization"
 
@@ -68,6 +72,32 @@ class AccountService(StateBound):
     async def get_me(self, request: account_pb.GetMeRequest, ctx: RequestContext) -> account_pb.GetMeResponse:
         identity, _token = await self.identity(ctx)
         return account_pb.GetMeResponse(id=identity.id, email=identity.email)
+
+
+class FoldingService(StateBound):
+    @rpc_errors
+    async def predict(self, request: folding_pb.PredictRequest, ctx: RequestContext) -> folding_pb.PredictResponse:
+        remaining = ctx.timeout_ms
+        if remaining is not None and remaining <= 0:
+            raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout")
+        try:
+            # The RPC context reports the remaining client budget, including
+            # authentication; the provider still keeps its own 30-second bound.
+            async with asyncio.timeout(None if remaining is None else remaining / 1000):
+                identity, _token = await self.identity(ctx)
+                body = FoldRequest(sequence=request.sequence, consent_to_send_sequence=request.consent_to_send_sequence)
+                if ctx.timeout_ms is not None and ctx.timeout_ms <= 0:
+                    raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout")
+                result = await predict(self._state, body, identity.id)
+                if ctx.timeout_ms is not None and ctx.timeout_ms <= 0:
+                    raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout")
+        except TimeoutError as error:
+            raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout") from error
+        return folding_pb.PredictResponse(
+            schema_version=result.schema_version, sequence=result.sequence, sequence_sha256=result.sequence_sha256,
+            pdb=result.pdb, pdb_sha256=result.pdb_sha256, provider=result.provider, model=result.model,
+            retrieved_at=convert.timestamp(result.retrieved_at), source_url=result.source_url,
+        )
 
 
 class ProjectService(StateBound):

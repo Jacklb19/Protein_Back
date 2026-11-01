@@ -36,6 +36,7 @@ class Settings:
     groq_api_key: str = field(default="", repr=False)
     assistant_model: str = DEFAULT_ASSISTANT_MODEL
     assistant_requests_per_minute: int = DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE
+    folding_enabled: bool = False
 
     @property
     def assistant_enabled(self) -> bool:
@@ -73,4 +74,5 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         groq_api_key=env.get("GROQ_API_KEY", "").strip(),
         assistant_model=env.get("ASSISTANT_MODEL", "").strip() or DEFAULT_ASSISTANT_MODEL,
         assistant_requests_per_minute=int(assistant_budget) if assistant_budget else DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE,
+        folding_enabled=env.get("FOLDING_ENABLED", "").strip() == "enabled",
     )

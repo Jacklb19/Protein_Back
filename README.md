@@ -1,8 +1,14 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Proyectos, guardado del laboratorio y asistente de interpretación publicados en la entrega del 23 de octubre; la lectura autenticada del asistente en producción todavía necesita comprobación. El [servicio SIFTS autenticado](docs/sifts.md), aprobado el 25, está implementado y probado localmente por REST/RPC; el 26 se completó su interfaz Biblioteca/Analizar y las pruebas combinadas. Publicación y consulta con JWT real pendientes. Inferencia estructural no integrada.
+**Publicación autorizada, 1 nov 2026:** el propietario confirma que aplicó `20261030000000_structure_predictions.sql` y configuró las banderas de predicción en ambos proyectos Vercel. Son declaraciones suyas, pendientes de comprobación remota posterior. Autoriza push de dev y merge/push a main de ambos repositorios para esta entrega, con autoría exclusiva de Jacklb19. La publicación sigue el orden backend→frontend y comprueba CI/despliegues; no se declara terminada antes de observarlos. Las referencias a «solo local» y producción sin predicción inferiores describen el estado anterior.
 
-## Organización
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Publicados: identidad, CRUD de proyectos, guardado del laboratorio, UniProt acotado, asistente de interpretación, el [servicio SIFTS autenticado](docs/sifts.md) —comprobado en producción con P01308/1TRZ— y el [historial del generador](docs/generator-history-contract-proposal.md) sobre workspace v3. Publicado: `main` `18d9444`, con CI y Vercel correctos. La continuación local de `dev` se describe abajo; todavía no está publicada. El propietario declara haber aplicado la migración `20261027000000` el 28 de octubre, sin inspección por nuestra parte. Siguen pendientes el recorrido con JWT real, el aislamiento por ID con una segunda cuenta y la comprobación de la prosa del asistente. La producción sigue sin predicción estructural; su implementación local posterior está descrita abajo.
+
+## Continuación local
+
+**Continuación local, 30 oct 2026:** [predicción estructural](docs/folding.md) implementada por REST/RPC, con consentimiento, validación y opt-in desactivado; guardado sobre laboratorio v2/workspace v4 y migración solo local. 146 pruebas descubiertas: 127 ejecutadas correctas y 19 SQL omitidas sin base; las 19 SQL pasaron aparte en PostgreSQL 18 temporal. `cbff97e` era la referencia local al iniciar esta entrega; la revisión preparada se consulta con `git log -1`. Nada de esta continuación está publicado; la descripción inicial corresponde a producción y sus versiones históricas.
+
+## Organización del workspace
 
 ```text
 ProteinForge/       # carpeta local, sin Git
@@ -48,4 +54,4 @@ Antes del primer despliegue: verificar runtime Python/Vercel, configurar los or�
 
 Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
 
-Próximas etapas: publicar y verificar el enlace SIFTS con sesión real, y obtener un diseño completo para el [laboratorio didáctico](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). La prueba manual gratuita RFD4 produjo un CIF legible de 59 residuos, pero fragmentado; no demuestra predicción independiente ni inferencia desde la app. Sin ejecutor, pesos ni endpoints de diseño implementados. Publicar requiere autorización nueva: backend con GetResidueMapping primero, repinchar/regenerar frontend después. Sin migraciones nuevas ni servicios de pago.
+Próximas etapas: verificar el enlace SIFTS y el guardado del historial con sesión real y dos cuentas, por ejemplo con Supabase local, y comprobar la prosa del asistente con lecturas reales. El modelado 3D sigue siendo manual en Colab y sus resultados se importan en el frontend; la inferencia desde la app está aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y no hay ejecutor, pesos ni endpoints de diseño implementados. Cada publicación necesita autorización nueva y conserva el orden migración → backend → repin/regeneración → frontend. Sin migraciones nuevas ni servicios de pago.

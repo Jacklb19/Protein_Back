@@ -15,7 +15,7 @@ from pydantic.alias_generators import to_camel
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
 from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
-from .laboratory import LaboratorySnapshot
+from .laboratory import LaboratorySnapshot, laboratory_document
 from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class SequenceSource(Contract):
 
 class Workspace(Contract):
     # 1: analysis and comparison; 2: adds a required laboratory; 3: optional laboratory and generator history.
-    schema_version: Literal[1, 2, 3] = 1
+    schema_version: Literal[1, 2, 3, 4] = 1
     profile_window: Literal[9, 19] = 9
     source: SequenceSource | None = None
     descriptors: DescriptorSnapshot | None = None
@@ -139,6 +139,9 @@ class Workspace(Contract):
             raise ValueError("Laboratory requires workspace version 2")
         if self.schema_version < 3 and self.generator_history is not None:
             raise ValueError("Generator history requires workspace version 3")
+        prediction_document = self.laboratory is not None and laboratory_document(self.laboratory.document_json)["schemaVersion"] == 2
+        if (self.schema_version == 4) != prediction_document:
+            raise ValueError("Predictions require workspace version 4")
         return self
 
 

@@ -81,7 +81,7 @@ What the measures mean, so you explain them correctly:
 
 logger = logging.getLogger(__name__)
 # A figure written alone: not part of an identifier such as 1UBQ, E6K or A30.
-FIGURE = re.compile(r"(?<![A-Za-z\d.,])\d+(?:[.,]\d+)*(?![A-Za-z\d])")
+FIGURE = re.compile(r"(?<![A-Za-z\d.,])[+\-−]?\d+(?:[.,]\d+)*(?![A-Za-z\d])")
 # Typographic thousands separators ("8\u202f445,71"), joined so the figure is read whole.
 THOUSANDS_SPACE = re.compile(r"(?<=\d)[\u00a0\u202f](?=\d{3}(?!\d))")
 # These verbal quantities can invent a calculation without introducing a new digit.
@@ -111,6 +111,7 @@ class Interpretation(Contract):
 
 def readings(token: str) -> set[tuple[Decimal, int]]:
     """Every value a written figure can stand for, with its decimals: "1,211" is 1.211 or 1211."""
+    token = token.replace("−", "-")
     values: set[tuple[Decimal, int]] = set()
     for decimal, thousands in ((",", "."), (".", ",")):
         if token.count(decimal) > 1:
@@ -133,14 +134,20 @@ def figures(text: str) -> list[set[tuple[Decimal, int]]]:
 def supported(written: set[tuple[Decimal, int]], known: set[tuple[Decimal, int]]) -> bool:
     """A figure is supported when it is a given value, or that value rounded to fewer decimals."""
     for value, places in written:
-        if places == 0 and value <= FREE_INTEGER_LIMIT:
+        if places == 0 and 0 <= value <= FREE_INTEGER_LIMIT:
             return True
         step = Decimal(1).scaleb(-places)
         for source, source_places in known:
             if source_places < places:
                 continue
-            if source == value or any(source.quantize(step, rounding=mode) == value for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN)):
+            if source == value:
                 return True
+            try:
+                if any(source.quantize(step, rounding=mode) == value for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN)):
+                    return True
+            except InvalidOperation:
+                # An oversized numeric fact must not crash verification of an unrelated figure.
+                continue
     return False
 
 

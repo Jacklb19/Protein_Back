@@ -1,5 +1,9 @@
 # Asistente de interpretación
 
+## Corrección local del 29 oct 2026: signos y decimales largos
+
+La [revisión local](review-continuation-2026-10-29.md) demostró y corrigió un cambio de signo que el verificador aceptaba: `GRAVY -0,532` podía reaparecer como `0,532`. Ahora conserva `+`, `-` y `−`, limita la excepción de enteros a 0–20 y evita que un hecho numérico muy largo provoque `Decimal.InvalidOperation`. Tres regresiones fallaron antes del arreglo y pasan después. Sin cambios de contrato ni publicación. Esta guarda no certifica la semántica completa de las lecturas reales.
+
 Publicado el 23 oct 2026 por decisión del propietario: opción B de la [propuesta](../../frontend/docs/assistant-proposal.md), con Groq y `openai/gpt-oss-120b`. El propietario aceptó expresamente que los datos de la interpretación salgan a ese proveedor. La entrega posterior del 26 oct también está publicada, con CI correcta. La [interfaz A revisada y aprobada](../../frontend/docs/assistant-ui-proposal.md) aparece al pie de Analizar y Laboratorio y envía solo cifras, nunca la secuencia; [uso y diagnóstico actual](../../frontend/docs/assistant.md).
 
 ## Comprobación real y proporciones verbales — 26 oct
@@ -42,7 +46,7 @@ Respuesta: `text` (hasta 4.000 caracteres), `model`, `provider` (`groq`) y `crea
 
 El mensaje de sistema pide usar solo los datos recibidos, copiar las cifras tal como llegan, no afirmar función, estabilidad, actividad, novedad, seguridad ni éxito experimental y no recomendar experimentos. Abre con una frase sin cifras y sigue con tres o cuatro párrafos de dos o tres frases, hasta dos cifras por frase y 180 palabras en total, sin Markdown. Las cifras se atribuyen a sus medidas y no se extrapolan a solubilidad, agregación, termoestabilidad, expresión ni plegamiento. Incluye un glosario de pLDDT, pTM, RMSD Cα, identidad, pI, GRAVY, índice de inestabilidad, índice alifático, perfil de hidropatía y alineamiento. Estas reglas de redacción son instrucciones al proveedor; la comprobación posterior automática valida cifras, tamaño y finalización, no garantiza la corrección científica de toda la prosa.
 
-La API además **verifica las cifras** del texto: admite valores recibidos y su redondeo a menos decimales en cualquiera de las dos convenciones decimales (`8.445,71` y `8445.71`, también con espacio fino de miles). Admite también enteros hasta 20 y las cotas del glosario 40, 50, 70, 90 y 100; los identificadores como `1UBQ`, `E6K` o `A30` no cuentan como cifras. El verificador no distingue si una cota o un entero permitido se usa como escala o como resultado: ese límite impide prometer ausencia de alucinaciones. Si aparece una cifra fuera de lo admitido, se descarta con 502 `assistant-unverified-figure` y no se muestra.
+La API además **verifica las cifras** del texto: admite valores recibidos y su redondeo a menos decimales en cualquiera de las dos convenciones decimales (`8.445,71` y `8445.71`, también con espacio fino de miles), conservando el signo en la corrección local del 29 oct. Admite también enteros de 0 a 20 y las cotas del glosario 40, 50, 70, 90 y 100; los identificadores como `1UBQ`, `E6K` o `A30` no cuentan como cifras. El verificador no distingue si una cota o un entero permitido se usa como escala o como resultado: ese límite impide prometer ausencia de alucinaciones. Si aparece una cifra fuera de lo admitido, se descarta con 502 `assistant-unverified-figure` y no se muestra.
 
 ## Errores
 
@@ -80,5 +84,7 @@ El navegador publicado se abrió sin sesión. El propietario indicó que iniciar
 Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identidad/proveedor simulados; las seis del diagnóstico se repitieron tras endurecer el lector de tramas y pasan. Incluyen rechazo de cuerpos truncados, duplicados y excesivos, omisión de datos privados, presencia local sin llamada al proveedor y referencia inválida sin reflejar su valor. La ejecución real de `--local-config` informó ambos indicadores `true`; esto acredita presencia local, no validez de la clave ni configuración remota. Advertencia previa de Starlette/httpx conservada. Sin cambios del código servido ni pruebas nuevas de producción, SQL o CI.
 
 ## Publicación de futuras correcciones
+
+Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). Sigue pendiente el diagnóstico técnico y la lectura crítica de respuestas aceptadas.
 
 La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.

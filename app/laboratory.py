@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
+from .folding_models import FoldResult
 
 MAX_LABORATORY_BYTES = 1_000_000
 
@@ -26,7 +27,9 @@ def laboratory_document(text: str) -> dict:
         raise ValueError("Invalid number")
     try:
         doc = json.loads(text, object_pairs_hook=pairs, parse_constant=reject_constant)
-        if set(doc) != {"kind", "schemaVersion", "source", "state"} or doc["kind"] != "proteinforge-laboratory" or type(doc["schemaVersion"]) is not int or doc["schemaVersion"] != 1:
+        version = doc.get("schemaVersion")
+        expected_keys = {"kind", "schemaVersion", "source", "state"} | ({"predictions"} if version == 2 else set())
+        if set(doc) != expected_keys or doc["kind"] != "proteinforge-laboratory" or type(version) is not int or version not in (1, 2):
             raise ValueError()
         source, state = doc["source"], doc["state"]
         if source.get("type") == "example":
@@ -50,6 +53,18 @@ def laboratory_document(text: str) -> dict:
                 raise ValueError()
         if not 0 <= state["selected"] < len(state["drafts"][state["activeId"]]["sequence"]):
             raise ValueError()
+        if version == 2:
+            predictions = doc["predictions"]
+            if not isinstance(predictions, dict) or len(predictions) > 3:
+                raise ValueError()
+            for variant_id, prediction in predictions.items():
+                if variant_id not in state["drafts"] or not isinstance(prediction, dict) or type(prediction.get("schemaVersion")) is not int:
+                    raise ValueError()
+                if set(prediction) != {field.alias for field in FoldResult.model_fields.values()}:
+                    raise ValueError()
+                result = FoldResult.model_validate(prediction)
+                if result.sequence != state["drafts"][variant_id]["sequence"]:
+                    raise ValueError()
         return doc
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:
         raise ValueError("Invalid laboratory document") from error

@@ -288,3 +288,55 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(self.listing()[0]['preview']['generatorRuns'],1)
         for function in ["public.pf_validate_generator_history('{}'::jsonb)","public.pf_generator_run_count('{}'::jsonb)"]:
             self.assertNotEqual(self.sql(f"select {function};",role='anon',check=False).returncode,0)
+
+    def prediction_snapshot(self):
+        import hashlib
+        from app.folding_models import FoldResult, sequence_hash
+        from test_folding import pdb_for
+        from test_laboratory import envelope, laboratory_fixture
+        prediction = FoldResult(sequence='ACD', sequence_sha256=sequence_hash('ACD'), pdb=pdb_for(),
+                                pdb_sha256=hashlib.sha256(pdb_for().encode()).hexdigest(), retrieved_at='2026-10-30T00:00:00Z').model_dump(by_alias=True)
+        doc = {**laboratory_fixture(), 'schemaVersion': 2, 'predictions': {'a'*64: prediction}}
+        workspace = json.loads(self.history_snapshot())
+        workspace.update(schemaVersion=4, laboratory=envelope(doc))
+        return workspace
+
+    def test_prediction_round_trip_rls_preview_monotonic_guard_and_cascade(self):
+        snapshot = self.prediction_snapshot()
+        saved = json.loads(self.save(json.dumps(snapshot)).stdout)
+        self.assertEqual(saved['workspace'], snapshot)
+        self.assertEqual((self.listing()[0]['preview']['generatorRuns'], self.listing()[0]['preview']['laboratoryVariants']), (1, 1))
+        self.assertNotIn('pdb', json.dumps(self.listing()))
+        self.assertEqual(self.sql(f"select public.pf_project_document('{self.id}') is null;", self.other).stdout.strip(), 't')
+        self.assertIn('Project not found', self.save(json.dumps(snapshot), saved['updatedAt'], user=self.other, check=False).stderr)
+        denied_delete = self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.other, check=False)
+        self.assertIn('Project not found', denied_delete.stderr)
+        for older in (self.snapshot, self.lab_snapshot(), self.history_snapshot()):
+            self.assertIn('Project requires current client', self.save(older, saved['updatedAt'], 'Lost', check=False).stderr)
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');", self.owner).stdout), saved)
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.owner)
+        self.assertEqual(self.sql(f"select count(*) from public.analyses where project_id='{self.id}';").stdout.strip(), '0')
+
+    def test_prediction_validation_idempotence_and_no_partial_write(self):
+        import copy
+        from test_laboratory import envelope
+        self.reapply('20261030000000_structure_predictions.sql', times=2)
+        original = self.prediction_snapshot()
+        for mutate in (lambda p: p.update(sequence='ACE'), lambda p: p.update(pdbSha256='0'*64),
+                       lambda p: p.update(ptm=.7), lambda p: p.pop('sourceUrl'),
+                       lambda p: p.update(retrievedAt='2026-10-30T00:00:00')):
+            snapshot = copy.deepcopy(original)
+            doc = json.loads(snapshot['laboratory']['documentJson']); mutate(doc['predictions']['a'*64])
+            snapshot['laboratory'] = envelope(doc)
+            denied = self.save(json.dumps(snapshot), check=False)
+            self.assertIn('Invalid laboratory', denied.stderr)
+        for version in (1, 2, 3):
+            snapshot = {**original, 'schemaVersion': version}
+            self.assertIn('Invalid laboratory', self.save(json.dumps(snapshot), check=False).stderr)
+        self.assertIn('Invalid laboratory', self.save(json.dumps({**original, 'laboratory': None}), check=False).stderr)
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');", self.owner).stdout), self.project)
+        for function in ("public.pf_validate_prediction('{}'::jsonb,'ACD')", "public.pf_validate_laboratory_v1('{}'::jsonb)"):
+            self.assertNotEqual(self.sql(f'select {function};', role='anon', check=False).returncode, 0)
+        doc = json.loads(original['laboratory']['documentJson']); doc['predictions'] = {}
+        original['laboratory'] = envelope(doc)
+        self.assertEqual(json.loads(self.save(json.dumps(original)).stdout)['workspace']['schemaVersion'], 4)
