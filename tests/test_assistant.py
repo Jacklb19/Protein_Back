@@ -92,6 +92,13 @@ class AssistantTests(unittest.TestCase):
         self.assertIn("assistant-unverified-figure", result.text)
         self.assertNotIn("41,7", result.text)
 
+    def test_refuses_a_sign_change_in_a_supplied_descriptor(self):
+        body = {**BODY, "facts": [{"label": "GRAVY", "value": "-0,532"}]}
+        with self.client(lambda _: completion("El GRAVY calculado es 0,532.")) as client:
+            result = self.post(client, body)
+        self.assertEqual(result.status_code, 502)
+        self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
+
     def test_refuses_derived_proportions_even_when_every_written_figure_is_supported(self):
         answers = [
             "La identidad es 42 de 76, menos de la mitad de los residuos.",
@@ -203,6 +210,17 @@ class FigureTests(unittest.TestCase):
         self.assertTrue(self.accepted("Inestabilidad 20,91, por debajo del umbral de 40.", known))
         self.assertTrue(self.accepted("Un pLDDT sobre 100; por encima de 90 es muy alto y bajo 50 muy bajo.", known))
         self.assertFalse(self.accepted("La masa es 8.445,71 Da.", known))
+
+    def test_preserves_signs_including_a_typographic_minus(self):
+        known = self.known("-0,532", "84,46")
+        for text in ["GRAVY -0,532", "GRAVY −0,532", "GRAVY -0,53", "masa +84,46"]:
+            self.assertTrue(self.accepted(text, known), text)
+        for text in ["GRAVY 0,532", "GRAVY +0,532", "masa -84,46", "−100", "-42"]:
+            self.assertFalse(self.accepted(text, known), text)
+
+    def test_a_long_numeric_fact_does_not_break_checking_other_figures(self):
+        known = self.known("9" * 100 + ".12")
+        self.assertFalse(self.accepted("Una medida de 84,46.", known))
 
 
 if __name__ == "__main__":
