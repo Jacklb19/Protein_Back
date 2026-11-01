@@ -10,7 +10,11 @@ Resultado: PDB original, secuencia, SHA256 de ambos, proveedor/modelo declarados
 
 Errores sin contenido del usuario/proveedor: 422 validación, 403 consentimiento, 401 sesión, 503 configuración, 429 cuota/ocupación, 502 proveedor/respuesta y 504 tiempo agotado. RPC conserva las categorías del contrato. Las respuestas no se almacenan en caché HTTP.
 
-## Persistencia y publicación futura
+## Activación autorizada — 1 nov 2026
+
+El propietario declara aplicada la migración nueva y configuradas `FOLDING_ENABLED=enabled` en backend y `VITE_STRUCTURE_PREDICTION=enabled` en frontend. Autoriza publicar ambos repositorios con autoría exclusiva suya. No repetir la migración. La declaración no equivale a haber inspeccionado la base o la configuración; se comprueba el despliegue posterior. El contrato preparado es `77a753c2f8673b964e1943a8845767c9dce67635`, ya fijado en frontend. Backend debe publicarse primero para que CI pueda descargarlo. La comprobación real local del 1 nov obtuvo 76 residuos con sesión del propietario, PDB y portable idénticos y límite en una repetición inmediata; producción y guardado remoto siguen pendientes hasta comprobarlos. [Evidencia local](../../frontend/docs/readiness-2026-11-01.md).
+
+## Persistencia y preparación anterior a la publicación
 
 RPC aplica además el plazo restante del contexto a autenticación y predicción: si caduca durante Auth, no envía la secuencia al proveedor; si caduca durante el intercambio, responde `DEADLINE_EXCEEDED` y libera la admisión. Las regresiones Connect de plazo vencido/corto fallaron antes del arreglo y pasan después. La revisión independiente confirmó por lectura el cierre; las ejecuciones las realizó coordinación.
 

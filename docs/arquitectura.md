@@ -1,5 +1,9 @@
 # Arquitectura del backend
 
+## Autorización de publicación — 1 nov 2026
+
+El propietario confirma la migración nueva de predicciones y las dos variables de activación, y autoriza push/merge de ambos repositorios con autoría exclusiva suya. Declaración recibida antes de publicar, sin reaplicar SQL ni cambiar configuración por nuestra parte. Se publica primero backend/contrato y se verifica CI antes del frontend. [Estado y alcance](folding.md#activación-autorizada--1-nov-2026). Las secciones fechadas inferiores conservan la historia previa.
+
 ## Implementación local del 30 oct 2026
 
 [Predicción ESM Atlas](folding.md) incorporada con REST/RPC autenticados, consentimiento, validación PDB y límites por identidad/proceso; desactivada por omisión. Documento de laboratorio v2 y workspace v4; migración nueva solo local, sin tablas/Storage nuevos. Batería: 146 descubiertas, 127 ejecutadas correctas y 19 SQL omitidas; las 19 SQL pasan aparte en PostgreSQL 18 temporal, con identidad emulada y clúster detenido. Sin publicación ni aplicación remota. El frontend necesita publicar este contrato y actualizar su pin antes de que CI remoto pueda regenerar el cliente. Se conservan los dos arreglos del asistente de la entrada anterior; las secciones inferiores describen sus fechas.
