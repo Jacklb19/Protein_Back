@@ -6,7 +6,7 @@ import unittest
 import httpx
 from fastapi.testclient import TestClient
 
-from app.assistant import figures, known_figures, refusal, supported, supported_proportions, InterpretRequest
+from app.assistant import SCALE_FIGURES, SYSTEM_PROMPT, figures, known_figures, refusal, supported, supported_proportions, InterpretRequest
 from app.config import Settings
 from app.main import create_app
 from app.rpc.gen.proteinforge.assistant.v1.assistant_service_pb import Fact, InterpretRequest as InterpretMessage, InterpretResponse, Subject
@@ -195,6 +195,26 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(web.content[5:5 + length].decode(), "grpc-status: 9\r\ngrpc-message: assistant-not-configured\r\n")
         self.assertEqual(self.sent, [])
 
+
+class PromptRuleTests(unittest.TestCase):
+    """The rules added after the 1 Nov review, pinned so they are not dropped silently."""
+
+    def test_prompt_asks_what_measures_report_and_forbids_outside_figures_and_inferences(self):
+        for language in ("Spanish", "English"):
+            prompt = SYSTEM_PROMPT.format(subject="a protein design laboratory", language=language)
+            self.assertIn(f"Write in {language}.", prompt)
+            self.assertIn("what each measure reports for these values", prompt)
+            self.assertNotIn("what these values suggest", prompt)
+            self.assertIn("Cite no threshold, range or reference value other than those in the glossary", prompt)
+            self.assertIn("Never say that all, every, none, or any share of the residues reach a level because of a mean", prompt)
+            self.assertIn("Do not compare with variants, structures, references or results that are not in the facts", prompt)
+            self.assertIn("Never claim that the protein folds, folds correctly, is stable or has a function", prompt)
+
+    def test_no_ptm_bound_is_taught_or_allowed(self):
+        # A pTM cut-off would be a new scientific figure; the glossary keeps only the 0 to 1 scale.
+        self.assertIn("from 0 to 1. It is not a comparison", SYSTEM_PROMPT)
+        self.assertNotIn("0.5", SYSTEM_PROMPT)
+        self.assertEqual(SCALE_FIGURES, (40, 50, 70, 90, 100))
 
 class FigureTests(unittest.TestCase):
     def known(self, *values, sequence=None):

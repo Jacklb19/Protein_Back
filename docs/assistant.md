@@ -37,14 +37,21 @@ Respuestas escritas a mano que el verificador **acepta** en las tres variantes; 
 
 El verificador comprueba valores, no a qué medida se atribuyen ni la semántica. Estos casos dependen del prompt.
 
-### Cambios de prompt propuestos (no aplicados)
+### Cambios de prompt aplicados (decisión de coordinación, 1 nov)
 
-1. Sustituir «what these values suggest» por «what each measure reports for these values», que invita menos a inferir.
-2. Añadir: «Cite no threshold, range or reference value other than those in the glossary», porque el glosario no da cotas de pTM ni de RMSD y el modelo las trae de memoria.
-3. Añadir: «Never say all, every, none or any share of residues from a mean» y «Do not compare with variants or results that are not in the facts».
-4. Opcional, decisión científica del propietario: si se quiere que el modelo pueda situar la pTM, añadir al glosario una cota documentada y a `SCALE_FIGURES` la misma cifra.
+El prompt es uno solo, en inglés, con el idioma como parámetro: las reglas valen igual para es y en.
 
-Pruebas: `PublicVariantReplayTests` (respuestas fieles aceptadas; umbrales, recuentos, porcentajes y proporciones rechazados; ordinal y «at most» en inglés aceptados con proporciones vecinas aún rechazadas) y una prueba de que el log contiene solo tipos y recuentos.
+1. «what these values suggest» pasa a «what each measure reports for these values», que invita menos a inferir.
+2. Ninguna cota, rango o valor de referencia fuera del glosario; si el glosario no da ninguna para una medida, no se da.
+3. Nada de «todos», «ninguno» o una parte de los residuos a partir de una media.
+4. Ninguna comparación con variantes, estructuras, referencias o resultados que no estén en los datos.
+5. No afirmar que la proteína se pliega, se pliega bien, es estable o tiene función: pTM y pLDDT describen la confianza del predictor en su propio modelo.
+
+No se añade cota de pTM: sería una cifra científica nueva y no nos corresponde. Opción aplazada: añadir «todos/all» a la lista verbal. Sin salidas reales que la comprueben podría crear falsos positivos nuevos.
+
+Estas reglas son instrucciones al modelo; no se ha medido su efecto con Groq. El verificador sigue sin detectar estas inferencias cuando no llevan cifras.
+
+Pruebas: `PromptRuleTests` (las reglas nuevas presentes en el prompt para es y en, sin cota de pTM ni cambio de `SCALE_FIGURES`), `PublicVariantReplayTests` (respuestas fieles aceptadas; umbrales, recuentos, porcentajes y proporciones rechazados; ordinal y «at most» en inglés aceptados con proporciones vecinas aún rechazadas) y una prueba de que el log contiene solo tipos y recuentos.
 
 ## Corrección local del 29 oct 2026: signos y decimales largos
 

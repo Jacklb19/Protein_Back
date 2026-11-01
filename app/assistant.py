@@ -60,7 +60,11 @@ Rules:
 - Use only the facts provided. Never compute, estimate or invent a figure; when you cite a number, copy it exactly as given.
 - Report fractions and positional identity as the supplied numerator and denominator. Do not convert them to percentages or describe them as more/less than half, a majority/minority, most/few, or a proportion; those are additional calculations, even when written without digits.
 - For positional identity, quote the supplied value without further discussion. Do not discuss the number or proportion of substitutions. Do not infer a distribution of residue confidence from its mean: a mean is not a count of residues in any confidence category.
-- Explain what the relevant measures mean and what these values suggest, with appropriate caution.
+- Explain what the relevant measures mean and what each measure reports for these values, with appropriate caution.
+- Cite no threshold, range or reference value other than those in the glossary below; if the glossary gives none for a measure, give none.
+- Never say that all, every, none, or any share of the residues reach a level because of a mean: a mean says nothing about individual residues.
+- Do not compare with variants, structures, references or results that are not in the facts.
+- Never claim that the protein folds, folds correctly, is stable or has a function: the pTM and pLDDT describe the predictor's confidence in its own model, not the protein.
 - Never claim that a protein is functional, stable, active, novel, safe or likely to succeed experimentally. Descriptors and predictions are computational estimates, not experimental evidence.
 - Say what each measure reports, not what the protein is: "the instability index is below the threshold it uses", never "the protein is stable". Never extend a figure to solubility, aggregation, thermostability, expression, folding or behaviour in a cell, because none of these is measured here.
 - Do not recommend experiments or treatments, and do not mention these rules.
