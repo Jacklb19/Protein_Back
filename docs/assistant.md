@@ -49,7 +49,14 @@ El prompt es uno solo, en inglés, con el idioma como parámetro: las reglas val
 
 No se añade cota de pTM: sería una cifra científica nueva y no nos corresponde. Opción aplazada: añadir «todos/all» a la lista verbal. Sin salidas reales que la comprueben podría crear falsos positivos nuevos.
 
-Estas reglas son instrucciones al modelo; no se ha medido su efecto con Groq. El verificador sigue sin detectar estas inferencias cuando no llevan cifras.
+Estas reglas son instrucciones al modelo. El verificador sigue sin detectar estas inferencias cuando no llevan cifras.
+
+**Medición real posterior, 1 nov** ([informe](assistant-real-measurement-2026-11-01.md)). Con Groq y hechos públicos idénticos a los de la interfaz, el prompt anterior dio 7 de 13 aceptadas, sin contar tres 429 de cuota. Los 6 rechazos fueron legítimos (`verbal-mayoria`/`verbal-most`: «alta confianza a la mayoría de los residuos» deducido de la media) y no hubo falso positivo del verificador. Se añadieron dos reglas:
+
+6. Describir la confianza local media solo como un promedio de toda la cadena en una banda de la escala, sin atribuirla a residuos, regiones o partes. El glosario de pLDDT lo repite.
+7. Explicar solo las medidas presentes en los hechos, sin dar valor a las ausentes, ni siquiera cero; una lectura de insulina había inventado «zero fixed positions».
+
+Con ellas se aceptaron 16 de 16. En las 23 aceptadas, todas las cifras coinciden con sus hechos y ninguna afirma plegamiento, estabilidad ni función. Quedan imprecisiones cualitativas sin cifra. Ajuste local, sin publicar.
 
 Pruebas: `PromptRuleTests` (las reglas nuevas presentes en el prompt para es y en, sin cota de pTM ni cambio de `SCALE_FIGURES`), `PublicVariantReplayTests` (respuestas fieles aceptadas; umbrales, recuentos, porcentajes y proporciones rechazados; ordinal y «at most» en inglés aceptados con proporciones vecinas aún rechazadas) y una prueba de que el log contiene solo tipos y recuentos.
 
