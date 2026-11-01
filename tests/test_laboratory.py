@@ -26,6 +26,33 @@ def envelope(doc=None, text=None):
 
 
 class LaboratoryTests(unittest.TestCase):
+    def test_predictions_require_version_four_and_exact_active_draft(self):
+        from app.folding_models import FoldResult, sequence_hash
+        from test_folding import pdb_for
+        result = FoldResult(sequence='ACD', sequence_sha256=sequence_hash('ACD'), pdb=pdb_for(),
+                            pdb_sha256=hashlib.sha256(pdb_for().encode()).hexdigest(), retrieved_at='2026-10-30T00:00:00Z').model_dump(by_alias=True)
+        document = {**laboratory_fixture(), 'schemaVersion': 2, 'predictions': {'a'*64: result}}
+        laboratory = envelope(document)
+        workspace = Workspace.model_validate({'schemaVersion': 4, 'laboratory': laboratory})
+        self.assertEqual(convert.workspace_document(convert.workspace_message(workspace))['laboratory'], laboratory)
+        for version in (1, 2, 3):
+            with self.assertRaises(ValueError):
+                Workspace.model_validate({'schemaVersion': version, 'laboratory': laboratory})
+        for lab in (None, envelope()):
+            with self.assertRaises(ValueError):
+                Workspace.model_validate({'schemaVersion': 4, 'laboratory': lab})
+        for mutate in (lambda d: d['predictions']['a'*64].update(sequence='ACE'),
+                       lambda d: d['predictions']['a'*64].update(ptm=.8),
+                       lambda d: d['predictions']['a'*64].pop('sourceUrl'),
+                       lambda d: d['predictions'].update({'b'*64: result}),
+                       lambda d: d['predictions'].update({'a'*64: None})):
+            changed = copy.deepcopy(document); mutate(changed)
+            with self.assertRaises(ValueError):
+                LaboratorySnapshot.model_validate(envelope(changed))
+        # Keep v2 after removing the last prediction, so a v4 save never downgrades.
+        document['predictions'] = {}
+        Workspace.model_validate({'schemaVersion': 4, 'laboratory': envelope(document)})
+
     def test_version_hash_and_corrupt_source_are_rejected(self):
         lab = envelope()
         self.assertEqual(LaboratorySnapshot.model_validate(lab).document_json, lab["documentJson"])

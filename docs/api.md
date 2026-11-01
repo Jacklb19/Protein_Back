@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Predicción — implementación local del 30 oct 2026
+
+[Contrato y verificación](folding.md): `POST /v1/predictions/fold` y `FoldingService/Predict`, autenticados y desactivados por defecto. Secuencia exacta de 3–120 residuos más consentimiento por solicitud; respuesta PDB/hash/procedencia sin métricas inventadas. Comparte cuota REST/RPC y no envía el token al proveedor. Laboratorio portable v2 requiere workspace v4 y la migración nueva solo local `20261030000000_structure_predictions.sql`. Sin publicación ni aplicación remota. La implementación del historial mencionada abajo ya está publicada y su migración fue declarada aplicada por el propietario el 28 oct; las secciones fechadas conservan su contexto anterior.
+
 ## Estado del 26 de octubre de 2026
 
 Asistente y laboratorio publicados en la entrega del 23; no volver a solicitar sus migraciones/publicación como si siguieran pendientes. Los apartados inferiores mantienen la historia de cada contrato. El propietario aprobó el suministro SIFTS y la maqueta de selección. Implementados localmente `GET /v1/pdb/{pdb_id}/residue-mapping` y `ReferenceService/GetResidueMapping`, autenticados, con versión/hash completos, presupuesto de referencias y respuesta máxima de 2.000.000 bytes. [Contrato y pruebas SIFTS](sifts.md). Sin migraciones nuevas; interfaz Biblioteca/Analizar integrada y verificada localmente el 26 con identidad simulada. Publicar backend primero, luego actualizar pin/regenerar frontend. Lectura autenticada de Groq y recorrido SIFTS con JWT real todavía pendientes de comprobar.
@@ -68,6 +72,7 @@ Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectS
 | `proteinforge.project.v1.ProjectService` | `ListProjects`, `GetProject`, `CreateProject`, `UpdateProject`, `DeleteProject` | `/v1/projects` |
 | `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
 | `proteinforge.assistant.v1.AssistantService` | `Interpret` | `POST /v1/assistant/interpret` |
+| `proteinforge.folding.v1.FoldingService` (local, sin publicar) | `Predict` | `POST /v1/predictions/fold` |
 
 Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nativos no admiten prefijo). Cada servicio responde a tres protocolos según el `Content-Type`:
 

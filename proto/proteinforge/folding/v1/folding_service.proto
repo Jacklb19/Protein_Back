@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package proteinforge.folding.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Bounded access to the public ESM Atlas server. JWT and per-action consent are required.
+// Missing confidence, PAE, pTM and model revision are deliberately not fabricated.
+service FoldingService {
+  // Equivalent REST route: POST /v1/predictions/fold. No persistent job is created.
+  rpc Predict(PredictRequest) returns (PredictResponse);
+}
+
+message PredictRequest {
+  // Exact canonical sequence, 3–120 residues.
+  string sequence = 1;
+  bool consent_to_send_sequence = 2;
+}
+
+message PredictResponse {
+  uint32 schema_version = 1;
+  string sequence = 2;
+  string sequence_sha256 = 3;
+  string pdb = 4;
+  string pdb_sha256 = 5;
+  string provider = 6;
+  string model = 7;
+  // Retrieval time, never a claim about when inference ran.
+  google.protobuf.Timestamp retrieved_at = 8;
+  string source_url = 9;
+}

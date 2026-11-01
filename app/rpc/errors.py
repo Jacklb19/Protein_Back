@@ -32,6 +32,7 @@ DETAIL_CODES: dict[str, Code] = {
     "projects-schema-unavailable": Code.FAILED_PRECONDITION,
     "identity-not-configured": Code.FAILED_PRECONDITION,
     "assistant-not-configured": Code.FAILED_PRECONDITION,
+    "folding-not-configured": Code.FAILED_PRECONDITION,
     "sifts-reference-version": Code.FAILED_PRECONDITION,
     "sifts-reference-mismatch": Code.FAILED_PRECONDITION,
 }

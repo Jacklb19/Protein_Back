@@ -1,8 +1,12 @@
 # ProteinForge — backend
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Publicados: identidad, CRUD de proyectos, guardado del laboratorio, UniProt acotado, asistente de interpretación, el [servicio SIFTS autenticado](docs/sifts.md) —comprobado en producción con P01308/1TRZ— y el [historial del generador](docs/generator-history-contract-proposal.md) sobre workspace v3. Estado: `main` `18d9444`, `dev` `acfea11`, con CI y Vercel correctos. El propietario declara haber aplicado la migración `20261027000000` el 28 de octubre, sin inspección por nuestra parte. Siguen pendientes el recorrido con JWT real, el aislamiento por ID con una segunda cuenta y la comprobación de la prosa del asistente. Inferencia estructural no integrada y aplazada por decisión del 28 de octubre.
+Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Publicados: identidad, CRUD de proyectos, guardado del laboratorio, UniProt acotado, asistente de interpretación, el [servicio SIFTS autenticado](docs/sifts.md) —comprobado en producción con P01308/1TRZ— y el [historial del generador](docs/generator-history-contract-proposal.md) sobre workspace v3. Publicado: `main` `18d9444`, con CI y Vercel correctos. La continuación local de `dev` se describe abajo; todavía no está publicada. El propietario declara haber aplicado la migración `20261027000000` el 28 de octubre, sin inspección por nuestra parte. Siguen pendientes el recorrido con JWT real, el aislamiento por ID con una segunda cuenta y la comprobación de la prosa del asistente. La producción sigue sin predicción estructural; su implementación local posterior está descrita abajo.
 
-## Organización
+## Continuación local
+
+**Continuación local, 30 oct 2026:** [predicción estructural](docs/folding.md) implementada por REST/RPC, con consentimiento, validación y opt-in desactivado; guardado sobre laboratorio v2/workspace v4 y migración solo local. 146 pruebas descubiertas: 127 ejecutadas correctas y 19 SQL omitidas sin base; las 19 SQL pasaron aparte en PostgreSQL 18 temporal. `cbff97e` era la referencia local al iniciar esta entrega; la revisión preparada se consulta con `git log -1`. Nada de esta continuación está publicado; la descripción inicial corresponde a producción y sus versiones históricas.
+
+## Organización del workspace
 
 ```text
 ProteinForge/       # carpeta local, sin Git

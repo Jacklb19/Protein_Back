@@ -1,12 +1,20 @@
 # Arquitectura del backend
 
+## Implementación local del 30 oct 2026
+
+[Predicción ESM Atlas](folding.md) incorporada con REST/RPC autenticados, consentimiento, validación PDB y límites por identidad/proceso; desactivada por omisión. Documento de laboratorio v2 y workspace v4; migración nueva solo local, sin tablas/Storage nuevos. Batería: 146 descubiertas, 127 ejecutadas correctas y 19 SQL omitidas; las 19 SQL pasan aparte en PostgreSQL 18 temporal, con identidad emulada y clúster detenido. Sin publicación ni aplicación remota. El frontend necesita publicar este contrato y actualizar su pin antes de que CI remoto pueda regenerar el cliente. Se conservan los dos arreglos del asistente de la entrada anterior; las secciones inferiores describen sus fechas.
+
+## Continuación local del 29 oct 2026
+
+Corregidos dos fallos del verificador del asistente: pérdida del signo de cifras y error de cuantización con hechos numéricos largos. Tres regresiones, sin cambios de contratos, dependencias o SQL. [Informe y evidencia](review-continuation-2026-10-29.md). Batería final local con Python 3.13.14: **133 descubiertas, 116 ejecutadas correctas y 17 SQL omitidas**; las 17 SQL pasaron aparte en PostgreSQL 18 temporal, con `auth.uid()` emulado y clúster detenido. Sin publicar ni certificar JWT/PostgREST reales o Python 3.14 de CI. La cifra histórica de 130 incluía las 17 omitidas; no eran 130 ejecutadas más 17.
+
 ## Estado del 28 de octubre de 2026
 
 Publicado `main` `18d9444` con CI y Vercel correctos; `dev` está en `acfea11`. La entrega publicada el 27 de octubre incluye el historial del generador: workspace v3 con el historial dentro del snapshot existente, guardia monótona y el código `project-requires-current-client`. No añade tablas, columnas, políticas ni Storage. [Contrato y decisiones](generator-history-contract-proposal.md).
 
 El backend publicado funciona con o sin la migración `20261027000000_generator_history.sql`: sin ella, el recuento de búsquedas vale cero y el SQL anterior rechaza los snapshots v3, de modo que la interfaz permanece oculta. El propietario declara haber aplicado esa migración en Supabase remoto el 28 de octubre; queda registrado como su declaración, sin inspección remota por nuestra parte, y no debe repetirse. Para que la aplicación ofrezca el guardado falta además activar `VITE_GENERATOR_HISTORY=enabled` en el proyecto de Vercel del frontend, que es trabajo del propietario.
 
-Verificación vigente del repositorio: `python -m unittest discover -s tests` con 130 pruebas correctas y 17 SQL omitidas sin base configurada, como en CI con Python 3.14. Pendientes reales: recorrido con JWT real y PostgREST, aislamiento por ID con una segunda cuenta y comprobación de la prosa del asistente. Por decisión del propietario del 28 de octubre, la inferencia estructural desde la aplicación queda aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y el diseño de forma nueva queda fuera del alcance; el cuaderno manual de Colab es la vía oficial y el frontend importa sus resultados. Las secciones siguientes conservan el histórico anterior.
+Verificación de aquella entrega: `python -m unittest discover -s tests` con 130 pruebas descubiertas, 113 ejecutadas correctas y 17 SQL omitidas sin base configurada. La ejecución de CI usaba Python 3.14; la comprobación local posterior permite corregir el recuento, sin repetir CI. Pendientes reales: recorrido con JWT real y PostgREST, aislamiento por ID con una segunda cuenta y comprobación de la prosa del asistente. Por decisión del propietario del 28 de octubre, la inferencia estructural desde la aplicación queda aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y el diseño de forma nueva queda fuera del alcance; el cuaderno manual de Colab es la vía oficial y el frontend importa sus resultados. Las secciones siguientes conservan el histórico anterior.
 
 ## Continuación del 26 de octubre de 2026
 
@@ -55,4 +63,4 @@ La petición posterior autoriza push de dev de ambos repositorios solo con autor
 
 ## Pruebas
 
-unittest: 130 pruebas correctas y 17 SQL omitidas sin base configurada, con transporte simulado; comprobado el 28 de octubre en local y ejecutado también por CI con Python 3.14. Cubre auditoría estática, REST, RPC, proyectos, SIFTS, asistente e historial del generador. `scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en un PostgreSQL temporal real con Auth.uid emulado: propietario, anónimo, transferencia, cascada, rollback y concurrencia. No certifica JWT ni PostgREST remotos. Adaptador UniProt probado además con datos públicos reales, sin credenciales.
+unittest en la entrega anterior: 130 descubiertas, 113 ejecutadas correctas y 17 SQL omitidas sin base configurada, con transporte simulado; comprobado el 28 oct en local y ejecutado también por CI con Python 3.14. La continuación local del 29 oct suma tres regresiones: 133 descubiertas, 116 ejecutadas + 17 omitidas, y 17 SQL correctas aparte en PostgreSQL 18 temporal. Cubre auditoría estática, REST, RPC, proyectos, SIFTS, asistente e historial del generador. `scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en un PostgreSQL temporal real con Auth.uid emulado: propietario, anónimo, transferencia, cascada, rollback y concurrencia. No certifica JWT ni PostgREST remotos. Adaptador UniProt probado además con datos públicos reales, sin credenciales.
