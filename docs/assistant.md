@@ -85,4 +85,6 @@ Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identid
 
 ## Publicación de futuras correcciones
 
+Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). Sigue pendiente el diagnóstico técnico y la lectura crítica de respuestas aceptadas.
+
 La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.
