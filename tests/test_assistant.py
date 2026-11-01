@@ -210,6 +210,17 @@ class PromptRuleTests(unittest.TestCase):
             self.assertIn("Do not compare with variants, structures, references or results that are not in the facts", prompt)
             self.assertIn("Never claim that the protein folds, folds correctly, is stable or has a function", prompt)
 
+    def test_prompt_keeps_a_mean_whole_and_skips_absent_measures(self):
+        # Real Groq readings of 1 Nov turned a mean pLDDT into "most residues" and gave an analysis
+        # a protected-position count it never received.
+        for language in ("Spanish", "English"):
+            prompt = SYSTEM_PROMPT.format(subject="a protein design laboratory", language=language)
+            self.assertIn("Describe a mean local confidence only as one average over the whole chain", prompt)
+            self.assertIn("Do not attribute that confidence to residues, regions or parts of the chain", prompt)
+            self.assertIn("A mean pLDDT is one average for the chain, not a count of confident residues", prompt)
+            self.assertIn("Explain only the measures present in the facts", prompt)
+            self.assertIn("never state a value for them, not even zero or none", prompt)
+
     def test_no_ptm_bound_is_taught_or_allowed(self):
         # A pTM cut-off would be a new scientific figure; the glossary keeps only the 0 to 1 scale.
         self.assertIn("from 0 to 1. It is not a comparison", SYSTEM_PROMPT)

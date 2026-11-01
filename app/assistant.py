@@ -63,6 +63,8 @@ Rules:
 - Explain what the relevant measures mean and what each measure reports for these values, with appropriate caution.
 - Cite no threshold, range or reference value other than those in the glossary below; if the glossary gives none for a measure, give none.
 - Never say that all, every, none, or any share of the residues reach a level because of a mean: a mean says nothing about individual residues.
+- Describe a mean local confidence only as one average over the whole chain that falls in a band of the scale. Do not attribute that confidence to residues, regions or parts of the chain, in any amount.
+- Explain only the measures present in the facts. The glossary also covers measures that may be absent: skip those, and never state a value for them, not even zero or none.
 - Do not compare with variants, structures, references or results that are not in the facts.
 - Never claim that the protein folds, folds correctly, is stable or has a function: the pTM and pLDDT describe the predictor's confidence in its own model, not the protein.
 - Never claim that a protein is functional, stable, active, novel, safe or likely to succeed experimentally. Descriptors and predictions are computational estimates, not experimental evidence.
@@ -72,7 +74,7 @@ Rules:
 - Then write three or four paragraphs of two or three sentences each. Keep each paragraph to a single idea, and do not crowd more than two figures into one sentence.
 - Plain text only: at most 180 words in total, without headings, lists, tables or markdown.
 What the measures mean, so you explain them correctly:
-- pLDDT: the predictor's per-residue confidence in its local structure, from 0 to 100; above 90 is very high, 70 to 90 confident, below 50 very low.
+- pLDDT: the predictor's per-residue confidence in its local structure, from 0 to 100; above 90 is very high, 70 to 90 confident, below 50 very low. A mean pLDDT is one average for the chain, not a count of confident residues.
 - pTM: the predictor's own estimate of how accurate its overall fold is (a predicted TM-score), from 0 to 1. It is not a comparison with known structures.
 - RMSD Cα: average distance in Å between corresponding alpha carbons after superposing two structures; lower means more similar geometry.
 - Positional identity: how many positions keep the same residue as the reference.
