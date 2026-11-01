@@ -1,5 +1,51 @@
 # Asistente de interpretación
 
+## Diagnóstico offline de los rechazos del 1 nov 2026
+
+Sin llamadas a Groq, sin `.env` ni datos privados. Se reconstruyeron los hechos que el Laboratorio envía para las variantes públicas 1–3 de 1UBQ sin editar (fixture `ubiquitin.json` y formato de `laboratoryFacts`) y se pasaron por el verificador respuestas plausibles escritas a mano.
+
+| Variante | Confianza media | RMSD Cα | pTM | Identidad | Longitud / protegidas |
+|---|---|---|---|---|---|
+| 1 | 93,39 | 0,822 Å | 0,863 | 42 de 76 | 76 / 0 |
+| 2 | 93,47 | 0,751 Å | 0,861 | 41 de 76 | 76 / 0 |
+| 3 | 92,92 | 1,211 Å | 0,858 | 40 de 76 | 76 / 0 |
+
+**Medido (offline):**
+
+- Una respuesta fiel en español, con las cifras copiadas o redondeadas, escalas 0–100 y 0–1, cotas 50/70/90, «0 posiciones protegidas» y «76 residuos», se acepta en las tres variantes. Rangos con guion (`70-90`), `93,39/100` y `0,822Å` también.
+- Se rechazan, en las tres: umbrales ajenos al glosario (pTM `0,5`, RMSD `1,0`/`1,5` Å), recuentos derivados (`34 posiciones cambian`), porcentajes (`55 %`, `86 %`) y «la mayoría de los residuos» a partir de una media. Son rechazos correctos según la regla: ninguna de esas cifras o proporciones viene en los datos.
+- Falsos positivos encontrados: en inglés, «at most» y el ordinal «the third variant» se tomaban como proporciones. Corregido: solo se apartan esas frases exactas; «a third of», «most residues», «at most half» y «the most similar» siguen rechazándose. En español no se encontró ninguna clase de falso positivo plausible; quedan casos raros como «en su mayoría, estas cifras…» o «variantes 1,2 y 3» sin espacio, que se siguen rechazando.
+- La única salida real conservada con estas mismas cifras (26 oct, variante 1) decía «la mayoría de los residuos» y «más de la mitad»: hoy se rechaza.
+
+**Supuesto, no demostrado:** los tres rechazos del 1 nov fueron probablemente infracciones reales de las reglas (proporción verbal desde la media o umbral de memoria como pTM 0,5), no un fallo del verificador. No se puede confirmar: el texto descartado no se guardó y no se sabe si la interfaz estaba en español o inglés. Veredicto: **sin determinar**, con indicios de rechazo legítimo.
+
+**Diagnóstico nuevo en logs.** El aviso de rechazo añade ahora tema, idioma y recuentos por tipo, por ejemplo `subject=laboratory language=es figure-percent=1 verbal-mayoria=1`. Tipos de cifra: `percent` (seguida de %), `near-known` (a una unidad de su último decimal de un valor conocido: suele ser un redondeo o truncado mal hecho, pero también puede ser un umbral que coincide por azar), `integer` y `decimal`. Las proporciones verbales salen con su término de la lista fija. Nunca se registran las cifras, la prosa ni la secuencia. Sin cambios de contrato ni de código de error.
+
+### Lectura crítica de salidas aceptadas
+
+Respuestas escritas a mano que el verificador **acepta** en las tres variantes; veredicto sobre su contenido:
+
+| Salida aceptada | Veredicto |
+|---|---|
+| Copia las cuatro cifras, explica escalas y dice que la media no indica cuántos residuos superan 90 | Correcta |
+| «Todos los residuos tienen confianza muy alta» desde la media | Incorrecta: distribución inferida; «todos» no está en la lista verbal |
+| «Se plegará correctamente y será estable» | Incorrecta: afirma plegamiento y estabilidad; no hay cifra que el verificador pueda detectar |
+| «Un pLDDT superior a 90 en el 93 % de la cadena» | Incorrecta: el 93 coincide con el redondeo de la media y se acepta |
+| «Una pTM superior a 0,8 indica alta calidad» (variantes 1 y 2) | Incorrecta: umbral de memoria; 0,8 coincide con el redondeo del RMSD. En la variante 3 se rechaza |
+| «Mejor RMSD que las otras dos variantes» | Sin apoyo: solo se envía una variante |
+| «Prácticamente idéntica a 1UBQ» por el RMSD | Exagerada: juicio cualitativo no medido |
+
+El verificador comprueba valores, no a qué medida se atribuyen ni la semántica. Estos casos dependen del prompt.
+
+### Cambios de prompt propuestos (no aplicados)
+
+1. Sustituir «what these values suggest» por «what each measure reports for these values», que invita menos a inferir.
+2. Añadir: «Cite no threshold, range or reference value other than those in the glossary», porque el glosario no da cotas de pTM ni de RMSD y el modelo las trae de memoria.
+3. Añadir: «Never say all, every, none or any share of residues from a mean» y «Do not compare with variants or results that are not in the facts».
+4. Opcional, decisión científica del propietario: si se quiere que el modelo pueda situar la pTM, añadir al glosario una cota documentada y a `SCALE_FIGURES` la misma cifra.
+
+Pruebas: `PublicVariantReplayTests` (respuestas fieles aceptadas; umbrales, recuentos, porcentajes y proporciones rechazados; ordinal y «at most» en inglés aceptados con proporciones vecinas aún rechazadas) y una prueba de que el log contiene solo tipos y recuentos.
+
 ## Corrección local del 29 oct 2026: signos y decimales largos
 
 La [revisión local](review-continuation-2026-10-29.md) demostró y corrigió un cambio de signo que el verificador aceptaba: `GRAVY -0,532` podía reaparecer como `0,532`. Ahora conserva `+`, `-` y `−`, limita la excepción de enteros a 0–20 y evita que un hecho numérico muy largo provoque `Decimal.InvalidOperation`. Tres regresiones fallaron antes del arreglo y pasan después. Sin cambios de contrato ni publicación. Esta guarda no certifica la semántica completa de las lecturas reales.
@@ -85,6 +131,6 @@ Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identid
 
 ## Publicación de futuras correcciones
 
-Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). Sigue pendiente el diagnóstico técnico y la lectura crítica de respuestas aceptadas.
+Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). El diagnóstico offline y la lectura crítica están en [Diagnóstico offline de los rechazos del 1 nov 2026](#diagnóstico-offline-de-los-rechazos-del-1-nov-2026); la causa exacta de estos tres sigue sin determinar.
 
 La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.

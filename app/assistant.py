@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
@@ -87,6 +88,11 @@ THOUSANDS_SPACE = re.compile(r"(?<=\d)[\u00a0\u202f](?=\d{3}(?!\d))")
 # These verbal quantities can invent a calculation without introducing a new digit.
 # Permit them only when the caller supplied that wording, just as with written figures.
 VERBAL_PROPORTION = re.compile(r"\b(?:(?:more|less|fewer)\s+than\s+(?:a\s+)?half|(?:m[aá]s|menos)\s+de\s+la\s+mitad|half|majority|minority|most|few|quarter|third|mitad|mayor[ií]a|minor[ií]a|tercio|cuarta\s+parte)\b", re.IGNORECASE)
+# English phrases that share those words without stating a share of anything: an upper bound
+# ("at most") and the ordinal of a supplied item ("the third variant"). Only these exact phrases
+# are set aside; any proportion word next to them is still checked.
+NOT_A_PROPORTION = re.compile(r"\bat\s+most\b|\bthe\s+third\s+(?:variant|sample|design|candidate)s?\b", re.IGNORECASE)
+PERCENT_AFTER = re.compile(r"\s*(?:%|por\s+ciento\b|percent\b|per\s+cent\b)", re.IGNORECASE)
 
 
 class Fact(Contract):
@@ -161,10 +167,48 @@ def known_figures(request: InterpretRequest) -> set[tuple[Decimal, int]]:
     return known | {(Decimal(value), 0) for value in SCALE_FIGURES}
 
 
+def verbal_term(match: re.Match[str]) -> str:
+    return " ".join(match.group().split()).casefold()
+
+
+def unsupported_proportions(text: str, request: InterpretRequest) -> list[str]:
+    """Verbal quantities absent from fact values; this is not a full semantic verifier."""
+    given = {verbal_term(match) for fact in request.facts for match in VERBAL_PROPORTION.finditer(fact.value)}
+    checked = NOT_A_PROPORTION.sub(" ", text)
+    return [term for term in map(verbal_term, VERBAL_PROPORTION.finditer(checked)) if term not in given]
+
+
 def supported_proportions(text: str, request: InterpretRequest) -> bool:
-    """Reject verbal quantities absent from fact values; this is not a full semantic verifier."""
-    given = {match.group().casefold() for fact in request.facts for match in VERBAL_PROPORTION.finditer(fact.value)}
-    return all(match.group().casefold() in given for match in VERBAL_PROPORTION.finditer(text))
+    return not unsupported_proportions(text, request)
+
+
+def figure_kind(text: str, match: re.Match[str], known: set[tuple[Decimal, int]]) -> str:
+    """A coarse, data-free class of a refused figure, so a refusal can be diagnosed from logs."""
+    if PERCENT_AFTER.match(text, match.end()):
+        return "percent"
+    written = readings(match.group())
+    for value, places in written:
+        unit = Decimal(1).scaleb(-places)
+        # A supplied value or allowed bound, truncated or misrounded at the precision written (93,3 for 93,39).
+        if any(source_places >= places and abs(source - value) <= unit for source, source_places in known):
+            return "near-known"
+    return "integer" if all(places == 0 for _, places in written) else "decimal"
+
+
+def refusal(text: str, request: InterpretRequest) -> dict[str, int]:
+    """Counts of why an answer cannot be shown, by kind only: never the figures or the prose."""
+    known = known_figures(request)
+    checked = THOUSANDS_SPACE.sub("", text)
+    reasons: dict[str, int] = {}
+    for match in FIGURE.finditer(checked):
+        if not supported(readings(match.group()), known):
+            kind = f"figure-{figure_kind(checked, match, known)}"
+            reasons[kind] = reasons.get(kind, 0) + 1
+    for term in unsupported_proportions(text, request):
+        # ASCII keys keep the log readable on any console: "más de la mitad" is verbal-mas-de-la-mitad.
+        kind = "verbal-" + unicodedata.normalize("NFKD", term).encode("ascii", "ignore").decode().replace(" ", "-")
+        reasons[kind] = reasons.get(kind, 0) + 1
+    return reasons
 
 
 def messages(request: InterpretRequest) -> list[dict[str, str]]:
@@ -219,10 +263,14 @@ async def interpret(context: ServiceContext, request: InterpretRequest, requeste
     if not context.assistant_limiter.allow(requester):
         raise HTTPException(429, "assistant-rate-limit")
     text = await complete(context, request)
-    known = known_figures(request)
-    if not all(supported(written, known) for written in figures(text)) or not supported_proportions(text, request):
-        # The answer is discarded rather than shown with a figure nobody computed.
-        logger.warning("Assistant answer cited a figure or verbal proportion absent from its facts")
+    reasons = refusal(text, request)
+    if reasons:
+        # The answer is discarded rather than shown with a figure nobody computed. The log names
+        # only kinds and counts (verbal terms come from the fixed list above), never figures or prose.
+        logger.warning(
+            "Assistant answer cited a figure or verbal proportion absent from its facts: subject=%s language=%s %s",
+            request.subject, request.language, " ".join(f"{kind}={count}" for kind, count in sorted(reasons.items())),
+        )
         raise HTTPException(502, "assistant-unverified-figure")
     return Interpretation(text=text, model=context.settings.assistant_model, created_at=datetime.now(timezone.utc).isoformat())
 

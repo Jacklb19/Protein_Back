@@ -6,7 +6,7 @@ import unittest
 import httpx
 from fastapi.testclient import TestClient
 
-from app.assistant import figures, known_figures, supported, InterpretRequest
+from app.assistant import figures, known_figures, refusal, supported, supported_proportions, InterpretRequest
 from app.config import Settings
 from app.main import create_app
 from app.rpc.gen.proteinforge.assistant.v1.assistant_service_pb import Fact, InterpretRequest as InterpretMessage, InterpretResponse, Subject
@@ -113,6 +113,16 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(result.status_code, 502)
             self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
             self.assertNotIn(answer, result.text)
+
+    def test_a_refusal_logs_only_kinds_and_counts(self):
+        answer = "La identidad es 42 de 76, alrededor del 55 %, y la mayoría de los residuos confía."
+        with self.assertLogs("app.assistant", "WARNING") as logs, self.client(lambda _: completion(answer)) as client:
+            result = self.post(client)
+        self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
+        line = " ".join(logs.output)
+        self.assertIn("subject=laboratory language=es figure-percent=1 verbal-mayoria=1", line)
+        for private in ("55", "42", "MQIFVK", "residuos"):
+            self.assertNotIn(private, line)
 
     def test_preserves_a_verbal_quantity_explicitly_supplied_as_a_fact(self):
         body = {**BODY, "facts": [*BODY["facts"], {"label": "Clasificación calculada", "value": "Más de la mitad"}]}
@@ -221,6 +231,60 @@ class FigureTests(unittest.TestCase):
     def test_a_long_numeric_fact_does_not_break_checking_other_figures(self):
         known = self.known("9" * 100 + ".12")
         self.assertFalse(self.accepted("Una medida de 84,46.", known))
+
+
+def laboratory(sample, plddt, rmsd, ptm, identical, language="es"):
+    """The facts the laboratory screen sends for an unedited public 1UBQ variant (1 Nov 2026)."""
+    labels = {
+        "es": ("Muestra", f"Variante {sample}", "Referencia experimental", "Longitud", "residuos", "Confianza local media / 100", "RMSD Cα frente a la referencia", "Identidad posicional con la referencia", f"{identical} de 76", "Posiciones protegidas"),
+        "en": ("Sample", f"Variant {sample}", "Experimental reference", "Length", "residues", "Mean local confidence / 100", "Cα RMSD against the reference", "Positional identity with the reference", f"{identical} of 76", "Protected positions"),
+    }[language]
+    sample_label, sample_value, reference, length, residues, confidence, rmsd_label, identity, identity_value, protected = labels
+    return InterpretRequest.model_validate({"subject": "laboratory", "language": language, "facts": [
+        {"label": sample_label, "value": sample_value}, {"label": reference, "value": "1UBQ"},
+        {"label": length, "value": "76", "unit": residues}, {"label": confidence, "value": plddt},
+        {"label": rmsd_label, "value": rmsd, "unit": "Å"}, {"label": "pTM", "value": ptm},
+        {"label": identity, "value": identity_value}, {"label": protected, "value": "0"},
+    ]})
+
+
+VARIANTS = [laboratory(1, "93,39", "0,822", "0,863", 42), laboratory(2, "93,47", "0,751", "0,861", 41), laboratory(3, "92,92", "1,211", "0,858", 40)]
+
+
+class PublicVariantReplayTests(unittest.TestCase):
+    """Plausible answers for the three public variants refused on 1 Nov, replayed offline."""
+
+    def test_faithful_answers_are_accepted_for_each_variant(self):
+        for request in VARIANTS:
+            plddt, rmsd, ptm, identity = (request.facts[index].value for index in (3, 4, 5, 6))
+            answer = (
+                f"Estos resultados describen una variante diseñada sobre 1UBQ. La confianza local media es {plddt} sobre 100, "
+                f"por encima de 90, el tramo muy alto de una escala de 0 a 100. La pTM es {ptm}, en una escala de 0 a 1. "
+                f"El RMSD Cα es {rmsd} Å y la identidad posicional es {identity}; hay 0 posiciones protegidas en 76 residuos."
+            )
+            with self.subTest(sample=request.facts[0].value):
+                self.assertEqual(refusal(answer, request), {})
+
+    def test_invented_thresholds_derived_counts_and_proportions_stay_refused(self):
+        cases = [
+            ("La pTM supera el umbral habitual de 0,5.", {"figure-decimal": 1}),
+            ("Un RMSD inferior a 1,5 Å se considera muy similar.", {"figure-decimal": 1}),
+            ("Así que 34 posiciones cambian respecto a 1UBQ.", {"figure-integer": 1}),
+            ("Equivale a un 55 % de identidad.", {"figure-percent": 1}),
+            ("La mayoría de los residuos tiene confianza muy alta.", {"verbal-mayoria": 1}),
+        ]
+        for request in VARIANTS:
+            for answer, reasons in cases:
+                with self.subTest(sample=request.facts[0].value, answer=answer):
+                    self.assertEqual(refusal(answer, request), reasons)
+        self.assertEqual(refusal("La confianza media es 93,3.", VARIANTS[0]), {"figure-near-known": 1})
+
+    def test_english_ordinals_and_upper_bounds_are_not_proportions(self):
+        request = laboratory(3, "92.92", "1.211", "0.858", 40, language="en")
+        for answer in ["This is the third variant designed on 1UBQ.", "The mean confidence of 92.92 is at most 100."]:
+            self.assertTrue(supported_proportions(answer, request), answer)
+        for answer in ["About a third of the residues differ.", "Most residues are confident.", "At most half of the positions differ.", "The third of the positions that changed.", "Variant 3 is the most similar."]:
+            self.assertFalse(supported_proportions(answer, request), answer)
 
 
 if __name__ == "__main__":
