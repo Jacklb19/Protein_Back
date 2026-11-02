@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Informes en Storage — implementación local del 1 nov 2026
+
+[Propuesta y contrato](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/reports-storage-proposal-2026-11-01.md) (RF-14). `/v1/reports` (`POST` reserva y URL firmada de subida, `GET` lista, `POST /{id}/complete`, `POST /{id}/download`, `DELETE /{id}`) y `proteinforge.report.v1.ReportService`, autenticados. La API nunca recibe los bytes: el navegador sube directamente a Storage con la URL firmada; PostgREST y Storage reciben el JWT del usuario. Bucket privado `reports`, tabla `reports` con RLS, cuota por propietario y límites en `app/report_config.py`, repetidos en la migración nueva solo local [20261101000000_report_storage.sql](../supabase/migrations/20261101000000_report_storage.sql). **No aplicada en Supabase**; sin interfaz ni publicación.
+
 ## Predicción — implementación local del 30 oct 2026
 
 [Contrato y verificación](folding.md): `POST /v1/predictions/fold` y `FoldingService/Predict`, autenticados y desactivados por defecto. Secuencia exacta de 3–120 residuos más consentimiento por solicitud; respuesta PDB/hash/procedencia sin métricas inventadas. Comparte cuota REST/RPC y no envía el token al proveedor. Laboratorio portable v2 requiere workspace v4 y la migración nueva solo local `20261030000000_structure_predictions.sql`. Sin publicación ni aplicación remota. La implementación del historial mencionada abajo ya está publicada y su migración fue declarada aplicada por el propietario el 28 oct; las secciones fechadas conservan su contexto anterior.
@@ -56,7 +60,7 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 
 | Método y ruta | Propósito | Autenticación prevista |
 |---|---|---|
-| POST /v1/reports | Registrar informe generado en cliente | Requerida |
+| /v1/reports | Implementado localmente arriba; pendiente de migración remota y publicación | Requerida |
 
 `GET /v1/pdb/{id}/structure` y `GET /v1/catalog/domains` dejan de ser rutas necesarias: BinaryCIF público se descarga de RCSB y el catálogo se sirve como JSON estático. RF-17/RF-18 no tienen rutas hasta acordar persistencia de candidatos, consentimiento, validación de PDB y procedencia.
 
@@ -73,6 +77,7 @@ Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectS
 | `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
 | `proteinforge.assistant.v1.AssistantService` | `Interpret` | `POST /v1/assistant/interpret` |
 | `proteinforge.folding.v1.FoldingService` (local, sin publicar) | `Predict` | `POST /v1/predictions/fold` |
+| `proteinforge.report.v1.ReportService` (local, sin publicar) | `CreateReportUpload`, `CompleteReport`, `ListReports`, `CreateReportDownload`, `DeleteReport` | `/v1/reports` |
 
 Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nativos no admiten prefijo). Cada servicio responde a tres protocolos según el `Content-Type`:
 
