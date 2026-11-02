@@ -16,7 +16,7 @@ from ..folding_models import FoldRequest
 from ..config import Settings
 from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
-from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectUpdate, ProjectWrite
+from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectCreate, ProjectUpdate
 from ..projects import fetch_project, fetch_projects, remove_project, save_project
 from ..project_config import PROJECT_NAME_LENGTH
 from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
@@ -134,7 +134,8 @@ class ProjectService(StateBound):
     @rpc_errors
     async def create_project(self, request: project_pb.CreateProjectRequest, ctx: RequestContext) -> project_pb.CreateProjectResponse:
         _identity, token = await self.identity(ctx)
-        payload = ProjectWrite.model_validate(convert.write_document(request.name, request.active_sequence, request.workspace))
+        document = convert.write_document(request.name, request.active_sequence, request.workspace)
+        payload = ProjectCreate.model_validate({**document, "requestId": optional_id(request.request_id, "request_id")})
         project = await save_project(self.context, token, payload)
         return project_pb.CreateProjectResponse(project=convert.project_message(project))
 

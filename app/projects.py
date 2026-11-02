@@ -173,6 +173,11 @@ class ProjectWrite(Contract):
         return self
 
 
+class ProjectCreate(ProjectWrite):
+    # Client-generated; a repeated value for the same owner returns the project already created.
+    request_id: UUID | None = None
+
+
 class ProjectUpdate(ProjectWrite):
     expected_updated_at: datetime
 
@@ -356,17 +361,21 @@ async def get_project(project_id: UUID, request: Request, _identity: CurrentIden
 
 
 async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None) -> Project:
-    return document(await data_request(context, token, "POST", "rpc/pf_save_project", json={
+    arguments = {
         "p_id": str(project_id) if project_id else None,
         "p_name": payload.name,
         "p_sequence": payload.active_sequence,
         "p_workspace": payload.workspace.model_dump(by_alias=True),
         "p_expected_updated_at": expected.isoformat() if expected else None,
-    }))
+    }
+    # Sent only when present, so creates without a key also work before the idempotency migration.
+    if isinstance(payload, ProjectCreate) and payload.request_id is not None:
+        arguments["p_create_request_id"] = str(payload.request_id)
+    return document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
 
 
 @router.post("", response_model=Project, status_code=201)
-async def create_project(payload: ProjectWrite, request: Request, _identity: CurrentIdentity, token: Token):
+async def create_project(payload: ProjectCreate, request: Request, _identity: CurrentIdentity, token: Token):
     return await save_project(context_of(request), token, payload)
 
 

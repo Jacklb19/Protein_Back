@@ -93,6 +93,43 @@ class PostgresSecurityTests(unittest.TestCase):
         deletion = self.sql(f"select public.pf_delete_project('{self.id}','{self.version}');", self.owner, check=False)
         self.assertIn("Project changed", deletion.stderr)
 
+    def keyed_create(self, key, name="Keyed", user=None, check=True):
+        return self.sql(f"select public.pf_save_project(null,'{name}','ACD','{self.snapshot}',null,'{key}');", user or self.owner, check=check)
+
+    def test_create_request_id_retry_returns_the_same_project_per_owner(self):
+        key = str(uuid4())
+        first = json.loads(self.keyed_create(key).stdout)
+        # A retry after a lost response, even with other content, returns the stored project untouched.
+        retry = json.loads(self.keyed_create(key, name="Retried").stdout)
+        self.assertEqual((retry["id"], retry["name"], retry["updatedAt"]), (first["id"], "Keyed", first["updatedAt"]))
+        self.assertEqual(self.sql(f"select count(*) from public.projects where create_request_id='{key}';").stdout.strip(), "1")
+        foreign = json.loads(self.keyed_create(key, user=self.other).stdout)
+        self.assertNotEqual(foreign["id"], first["id"])
+        self.assertEqual(self.sql(f"select public.pf_project_document('{first['id']}') is null;", self.other).stdout.strip(), "t")
+        unkeyed = [json.loads(self.sql(f"select public.pf_save_project(null,'Plain','ACD','{self.snapshot}',null,null);", self.owner).stdout)["id"] for _ in range(2)]
+        self.assertNotEqual(unkeyed[0], unkeyed[1])
+        concurrent_key = str(uuid4())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda name: self.keyed_create(concurrent_key, name=name, check=False), ["First", "Second"]))
+        self.assertEqual([result.returncode for result in results], [0, 0], [result.stderr for result in results])
+        self.assertEqual(len({json.loads(result.stdout)["id"] for result in results}), 1)
+        # Deleting the created project frees the key; updates never take one.
+        self.sql(f"select public.pf_delete_project('{first['id']}','{first['updatedAt']}');", self.owner)
+        self.assertNotEqual(json.loads(self.keyed_create(key).stdout)["id"], first["id"])
+        updated = self.sql(f"select public.pf_save_project('{self.id}','Study','ACD','{self.snapshot}','{self.version}','{key}');", self.owner, check=False)
+        self.assertIn("Invalid workspace", updated.stderr)
+        anonymous = self.sql(f"select public.pf_save_project(null,'Anon','ACD','{self.snapshot}',null,'{uuid4()}');", role="anon", check=False)
+        self.assertNotEqual(anonymous.returncode, 0)
+
+    def test_update_conflicts_are_unchanged_by_create_idempotency(self):
+        self.reapply("20261102000000_project_create_idempotency.sql", times=2)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Renamed','ACD','{self.snapshot}','{self.version}');", self.owner).stdout)
+        stale = self.sql(f"select public.pf_save_project('{self.id}','Lost','ACD','{self.snapshot}','{self.version}');", self.owner, check=False)
+        self.assertIn("Project changed", stale.stderr)
+        self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');", self.owner).stdout)["name"], saved["name"])
+        overloads = self.sql("select count(*) from pg_proc where proname='pf_save_project' and pronamespace='public'::regnamespace;").stdout.strip()
+        self.assertEqual(overloads, "1")
+
     def test_failed_snapshot_write_rolls_back_project_update(self):
         result = self.sql(f"begin; update public.projects set name='Must roll back' where id='{self.id}'; insert into public.analyses(project_id,type) values ('{self.id}','workspace-v1'); commit;", self.owner, check=False)
         self.assertNotEqual(result.returncode, 0)

@@ -34,7 +34,8 @@ class ProjectService(Protocol):
     indistinguishable from a missing one (NOT_FOUND).
 
     Writes use optimistic concurrency: updates and deletes send the update_time they last saw
-    and fail with ABORTED when the project changed meanwhile.
+    and fail with ABORTED when the project changed meanwhile. Creates may carry a client
+    request_id so a retry after a lost response returns the project it already created.
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
@@ -54,7 +55,8 @@ class ProjectService(Protocol):
 
     async def create_project(self, request: CreateProjectRequest, ctx: RequestContext[CreateProjectRequest, CreateProjectResponse], /) -> CreateProjectResponse:
         """
-        Creates the project and its snapshot in one transaction.
+        Creates the project and its snapshot in one transaction. Repeating a request_id the
+        caller already used returns that project unchanged instead of creating another one.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -158,7 +160,8 @@ class ProjectServiceClient(ConnectClient):
     indistinguishable from a missing one (NOT_FOUND).
 
     Writes use optimistic concurrency: updates and deletes send the update_time they last saw
-    and fail with ABORTED when the project changed meanwhile.
+    and fail with ABORTED when the project changed meanwhile. Creates may carry a client
+    request_id so a retry after a lost response returns the project it already created.
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
@@ -222,7 +225,8 @@ class ProjectServiceClient(ConnectClient):
         timeout_ms: int | None = None,
     ) -> CreateProjectResponse:
         """
-        Creates the project and its snapshot in one transaction.
+        Creates the project and its snapshot in one transaction. Repeating a request_id the
+        caller already used returns that project unchanged instead of creating another one.
         """
         return await self.execute_unary(
             request=request,
@@ -290,7 +294,8 @@ class ProjectServiceSync(Protocol):
     indistinguishable from a missing one (NOT_FOUND).
 
     Writes use optimistic concurrency: updates and deletes send the update_time they last saw
-    and fail with ABORTED when the project changed meanwhile.
+    and fail with ABORTED when the project changed meanwhile. Creates may carry a client
+    request_id so a retry after a lost response returns the project it already created.
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
@@ -310,7 +315,8 @@ class ProjectServiceSync(Protocol):
 
     def create_project(self, request: CreateProjectRequest, ctx: RequestContext[CreateProjectRequest, CreateProjectResponse], /) -> CreateProjectResponse:
         """
-        Creates the project and its snapshot in one transaction.
+        Creates the project and its snapshot in one transaction. Repeating a request_id the
+        caller already used returns that project unchanged instead of creating another one.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -412,7 +418,8 @@ class ProjectServiceClientSync(ConnectClientSync):
     indistinguishable from a missing one (NOT_FOUND).
 
     Writes use optimistic concurrency: updates and deletes send the update_time they last saw
-    and fail with ABORTED when the project changed meanwhile.
+    and fail with ABORTED when the project changed meanwhile. Creates may carry a client
+    request_id so a retry after a lost response returns the project it already created.
 
     Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
     snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
@@ -474,7 +481,8 @@ class ProjectServiceClientSync(ConnectClientSync):
         timeout_ms: int | None = None,
     ) -> CreateProjectResponse:
         """
-        Creates the project and its snapshot in one transaction.
+        Creates the project and its snapshot in one transaction. Repeating a request_id the
+        caller already used returns that project unchanged instead of creating another one.
         """
         return self.execute_unary(
             request=request,
