@@ -40,7 +40,7 @@ También implementados GET /v1/uniprot/search y GET /v1/uniprot/{accession}; ver
 |---|---|---|
 | GET /v1/health | Estado del proceso, versión y si la identidad está configurada | Pública |
 | GET /v1/me | Identidad del portador del token: `id` (coincide con `profiles.id`) y `email` | Bearer JWT de Supabase |
-| POST /v1/projects | Crear proyecto/snapshot transaccional; 201 | Bearer JWT |
+| POST /v1/projects | Crear proyecto/snapshot transaccional; 201. `requestId` (UUID) opcional: repetirlo devuelve el proyecto ya creado | Bearer JWT |
 | GET /v1/projects | Listar propios sin secuencias, paginados | Bearer JWT |
 | GET /v1/projects/{id} | Abrir propio; ajeno/ausente: 404 | Bearer JWT |
 | PUT /v1/projects/{id} | Guardar o renombrar con versión conocida; 409 | Bearer JWT |
@@ -74,6 +74,8 @@ Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectS
 | --- | --- | --- |
 | `proteinforge.account.v1.AccountService` | `GetStatus`, `GetMe` | `GET /v1/health`, `GET /v1/me` |
 | `proteinforge.project.v1.ProjectService` | `ListProjects`, `GetProject`, `CreateProject`, `UpdateProject`, `DeleteProject` | `/v1/projects` |
+
+`CreateProjectRequest.request_id` (campo 4, local, sin publicar): UUID generado por el cliente; vacío conserva el comportamiento anterior. La pareja (propietario, `request_id`) es única: un reintento tras perder la respuesta devuelve el proyecto existente sin tocar su snapshot, y la misma clave en otra cuenta crea otro proyecto. Un valor que no es UUID responde `INVALID_ARGUMENT` `validation: request_id`. Requiere [20261102000000_project_create_idempotency.sql](../supabase/migrations/20261102000000_project_create_idempotency.sql); sin esa migración, un create con clave falla (`FAILED_PRECONDITION`/503) y uno sin clave sigue funcionando, porque la API solo envía `p_create_request_id` cuando existe.
 | `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
 | `proteinforge.assistant.v1.AssistantService` | `Interpret` | `POST /v1/assistant/interpret` |
 | `proteinforge.folding.v1.FoldingService` (local, sin publicar) | `Predict` | `POST /v1/predictions/fold` |
