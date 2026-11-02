@@ -8,7 +8,7 @@ import unittest
 import httpx
 
 from app.laboratory import LaboratorySnapshot, MAX_LABORATORY_BYTES
-from app.projects import ProjectWrite, Workspace
+from app.projects import Workspace
 from app.rpc import convert
 from app.rpc.gen.proteinforge.project.v1.project_service_pb import CreateProjectRequest, CreateProjectResponse
 
@@ -81,8 +81,8 @@ class LaboratoryTests(unittest.TestCase):
         text=json.dumps(laboratory_fixture())
         exact=text+' '*(MAX_LABORATORY_BYTES-len(text.encode()))
         self.assertEqual(LaboratorySnapshot.model_validate(envelope(text=exact)).document_json,exact)
-        for text in [exact+' ', text+'\u2003'*400_000]:
-            with self.assertRaises(ValueError): LaboratorySnapshot.model_validate(envelope(text=text))
+        for oversized in [exact+' ', text+'\u2003'*400_000]:
+            with self.assertRaises(ValueError): LaboratorySnapshot.model_validate(envelope(text=oversized))
 
     def test_rest_and_grpc_web_preserve_envelope_and_compact_preview(self):
         from test_rpc import RpcTests, DOCUMENT, WORKSPACE, PROJECTS, TOKEN, grpc_web_frames
