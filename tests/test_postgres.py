@@ -340,3 +340,109 @@ class PostgresSecurityTests(unittest.TestCase):
         doc = json.loads(original['laboratory']['documentJson']); doc['predictions'] = {}
         original['laboratory'] = envelope(doc)
         self.assertEqual(json.loads(self.save(json.dumps(original)).stdout)['workspace']['schemaVersion'], 4)
+
+    # Reports: Storage is emulated by inserting/deleting storage.objects rows under the caller's
+    # role and claims, as the Storage API does; signed URLs and file bytes are not exercised here.
+    SHA = 'a' * 64
+
+    def reserve(self, user=None, project=None, kind='pdf', size=100, check=True):
+        target = f"'{project}'" if project else 'null'
+        result = self.sql(f"select public.pf_reserve_report({target},'{kind}',{size},'{self.SHA}');", user or self.owner, check=check)
+        return json.loads(result.stdout) if check else result
+
+    def upload(self, path, size=100, mime='application/pdf', user=None, check=True):
+        metadata = json.dumps({'size': size, 'mimetype': mime})
+        statement = f"insert into storage.objects(bucket_id,name,owner,metadata) values ('reports','{path}','{user or self.owner}','{metadata}');"
+        return self.sql(statement, user or self.owner, check=check)
+
+    def report_object(self, report_id, user=None):
+        return json.loads(self.sql(f"select public.pf_report_object('{report_id}');", user or self.owner).stdout.strip() or 'null')
+
+    def reports(self, user=None, project=None):
+        target = f"'{project}'" if project else 'null'
+        statement = f"select coalesce(jsonb_agg(r), '[]'::jsonb) from public.pf_list_reports(51,0,{target}) r;"
+        return json.loads(self.sql(statement, user or self.owner).stdout)
+
+    def test_report_reserve_upload_complete_list_and_delete_are_owner_scoped(self):
+        reserved = self.reserve(project=self.id)
+        report, path = reserved['report'], reserved['objectPath']
+        self.assertEqual((report['status'], report['projectId'], report['completedAt']), ('pending', self.id, None))
+        self.assertEqual(path, f"{self.owner}/{report['id']}.pdf")
+        complete = f"select public.pf_complete_report('{report['id']}');"
+        self.assertIn('Report upload missing', self.sql(complete, self.owner, check=False).stderr)
+        self.assertIn('row-level security', self.upload(path, user=self.other, check=False).stderr)
+        self.assertIsNone(self.report_object(report['id'], self.other))
+        self.assertEqual(self.sql("select count(*) from public.reports;", self.other).stdout.strip(), '0')
+        for operation in [complete, f"select public.pf_delete_report('{report['id']}');"]:
+            self.assertIn('Report not found', self.sql(operation, self.other, check=False).stderr)
+        wrong = self.reserve(kind='json')
+        self.upload(wrong['objectPath'], size=99, mime='application/json')
+        self.assertIn('Report upload missing', self.sql(f"select public.pf_complete_report('{wrong['report']['id']}');", self.owner, check=False).stderr)
+        self.upload(path)
+        ready = json.loads(self.sql(complete, self.owner).stdout)
+        self.assertEqual(ready['status'], 'ready')
+        self.assertIsNotNone(ready['completedAt'])
+        self.assertEqual(json.loads(self.sql(complete, self.owner).stdout), ready)
+        self.assertEqual([row['id'] for row in self.reports()], [wrong['report']['id'], report['id']])
+        self.assertEqual([row['id'] for row in self.reports(project=self.id)], [report['id']])
+        self.assertNotIn('object_path', json.dumps(self.reports()))
+        self.assertEqual(self.reports(self.other), [])
+        self.assertEqual(self.sql("select count(*) from storage.objects;", self.other).stdout.strip(), '0')
+        self.sql(f"delete from storage.objects where name='{path}';", self.other)
+        self.assertEqual(self.sql(f"select count(*) from storage.objects where name='{path}';").stdout.strip(), '1')
+        self.sql(f"delete from storage.objects where name='{path}';", self.owner)
+        self.sql(f"select public.pf_delete_report('{report['id']}');", self.owner)
+        self.assertIsNone(self.report_object(report['id']))
+        self.assertIn('Report not found', self.sql(f"select public.pf_delete_report('{report['id']}');", self.owner, check=False).stderr)
+
+    def test_report_server_columns_cannot_be_forged_or_changed(self):
+        statement = (f"insert into public.reports(owner_id,kind,size_bytes,sha256,status,object_path,completed_at) "
+                     f"values ('{self.other}','json',10,'{self.SHA}','ready','{self.other}/x.json',now()) "
+                     "returning owner_id||' '||status||' '||object_path||' '||(completed_at is null);")
+        owner, status, path, unfinished = self.sql(statement, self.owner).stdout.strip().split(' ')
+        self.assertEqual((owner, status, unfinished), (self.owner, 'pending', 'true'))
+        self.assertTrue(path.startswith(f"{self.owner}/") and path.endswith('.json'))
+        report = self.reserve(project=self.id)['report']
+        second = json.loads(self.sql(f"select public.pf_save_project(null,'Second','ACD','{self.snapshot}',null);", self.owner).stdout)['id']
+        for change in [f"sha256='{'b' * 64}'", "size_bytes=1", f"object_path='{self.owner}/y.pdf'", f"project_id='{second}'", "kind='json'"]:
+            with self.subTest(change=change):
+                self.assertIn('Invalid report', self.sql(f"update public.reports set {change} where id='{report['id']}';", self.owner, check=False).stderr)
+        self.assertIn('Report upload missing', self.sql(f"update public.reports set status='ready' where id='{report['id']}';", self.owner, check=False).stderr)
+        foreign = json.loads(self.sql(f"select public.pf_save_project(null,'Foreign','ACD','{self.snapshot}',null);", self.other).stdout)['id']
+        self.assertIn('Project not found', self.reserve(project=foreign, check=False).stderr)
+        direct = f"insert into public.reports(project_id,kind,size_bytes,sha256) values ('{foreign}','pdf',1,'{self.SHA}');"
+        self.assertIn('Project not found', self.sql(direct, self.owner, check=False).stderr)
+        self.sql(f"select public.pf_delete_project('{self.id}','{self.version}');", self.owner)
+        self.assertIsNone(self.report_object(report['id'])['report']['projectId'])
+        for operation in ["select * from public.reports;", f"select public.pf_reserve_report(null,'pdf',1,'{self.SHA}');", "select * from public.pf_list_reports(1,0,null);"]:
+            self.assertNotEqual(self.sql(operation, role='anon', check=False).returncode, 0)
+
+    def test_report_bounds_quota_concurrency_and_reservation_expiry(self):
+        for kind, size, sha in [('docx', 1, self.SHA), ('pdf', 0, self.SHA), ('pdf', 5000001, self.SHA), ('pdf', 1, 'A' * 64), ('pdf', 1, 'a' * 63)]:
+            with self.subTest(kind=kind, size=size, sha=sha[:2]):
+                result = self.sql(f"select public.pf_reserve_report(null,'{kind}',{size},'{sha}');", self.owner, check=False)
+                self.assertIn('Invalid report', result.stderr)
+        self.sql(f"select public.pf_reserve_report(null,'pdf',1,'{self.SHA}') from generate_series(1,19);", self.owner)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: self.reserve(size=1, check=False), range(2)))
+        self.assertEqual(sum(result.returncode == 0 for result in results), 1)
+        self.assertIn('Report quota exceeded', next(result.stderr for result in results if result.returncode != 0))
+        self.sql(f"select public.pf_reserve_report(null,'pdf',5000000,'{self.SHA}') from generate_series(1,5);", self.other)
+        self.assertIn('Report quota exceeded', self.reserve(self.other, size=1, check=False).stderr)
+        kept = self.reports()[0]
+        self.upload(f"{self.owner}/{kept['id']}.pdf", size=1)
+        # Age the reservations past the two-hour upload window without firing the immutability trigger.
+        self.sql(f"set session_replication_role = replica; update public.reports set created_at = created_at - interval '3 hours' where owner_id = '{self.owner}';")
+        late = self.reports()[1]
+        self.assertIn('row-level security', self.upload(f"{self.owner}/{late['id']}.pdf", size=1, check=False).stderr)
+        fresh = self.reserve(size=1)['report']
+        self.assertEqual({row['id'] for row in self.reports()}, {kept['id'], fresh['id']})
+        self.assertEqual(json.loads(self.sql(f"select public.pf_complete_report('{kept['id']}');", self.owner).stdout)['status'], 'ready')
+
+    def test_report_migration_is_idempotent_and_bucket_is_private(self):
+        self.reapply('20261101000000_report_storage.sql', times=2)
+        bucket = self.sql("select public||' '||file_size_limit||' '||array_to_string(allowed_mime_types,',') from storage.buckets where id='reports';").stdout.strip()
+        self.assertEqual(bucket, 'false 5000000 application/pdf,application/json,text/csv')
+        self.assertEqual(self.reserve()['report']['status'], 'pending')
+        for function in ["public.pf_report_object(gen_random_uuid())", "public.pf_complete_report(gen_random_uuid())", "public.pf_delete_report(gen_random_uuid())"]:
+            self.assertNotEqual(self.sql(f"select {function};", role='anon', check=False).returncode, 0)

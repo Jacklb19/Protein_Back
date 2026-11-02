@@ -10,6 +10,7 @@ from dotenv import dotenv_values
 
 API_PREFIX = "/v1"
 SUPABASE_AUTH_PATH = "/auth/v1"
+SUPABASE_STORAGE_PATH = "/storage/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
 
 # Request headers that browsers send for Connect and gRPC-Web calls, and gRPC status headers they must read.

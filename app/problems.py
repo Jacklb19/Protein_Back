@@ -18,6 +18,7 @@ TITLES = {
     403: "Forbidden",
     404: "Not found",
     409: "Conflict",
+    413: "Content too large",
     422: "Unprocessable content",
     429: "Too many requests",
     500: "Internal server error",

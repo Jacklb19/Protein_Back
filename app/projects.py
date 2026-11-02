@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -264,15 +265,16 @@ class ProjectList(Contract):
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def data_request(context: ServiceContext, token: str, method: str, path: str, **kwargs):
+async def data_request(context: ServiceContext, token: str, method: str, path: str, *, area: str = "projects", messages: Mapping[str, tuple[int, str]] | None = None, **kwargs):
+    """PostgREST call with the user's token. `area` prefixes service errors; `messages` maps fixed SQL messages of PT codes."""
     settings = context.settings
     headers = {"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
         response = await context.http_client.request(method, f"{settings.supabase_url}/rest/v1/{path}", headers=headers, timeout=DATA_TIMEOUT_SECONDS, **kwargs)
     except httpx.TimeoutException as error:
-        raise HTTPException(504, "projects-timeout") from error
+        raise HTTPException(504, f"{area}-timeout") from error
     except httpx.HTTPError as error:
-        raise HTTPException(502, "projects-unreachable") from error
+        raise HTTPException(502, f"{area}-unreachable") from error
     if response.status_code == 401:
         raise HTTPException(401, "invalid-token", headers={"WWW-Authenticate": "Bearer"})
     if response.status_code >= 400:
@@ -281,8 +283,11 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
             code, message = body.get("code", ""), body.get("message", "")
         except (ValueError, AttributeError):
             code, message = "", ""
+        if messages and code.startswith("PT") and message in messages:
+            status, detail = messages[message]
+            raise HTTPException(status, detail)
         if code in ("PGRST202", "PGRST205", "42P01", "42883"):
-            raise HTTPException(503, "projects-schema-unavailable")
+            raise HTTPException(503, f"{area}-schema-unavailable")
         if code == "PT409":
             # A newer stored snapshot stays a conflict for current clients; its own code tells them apart.
             if message == REQUIRES_CURRENT_CLIENT_MESSAGE:
@@ -296,11 +301,11 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
             raise HTTPException(403, "project-forbidden")
         # Status and error code only: provider messages can quote submitted values.
         logger.warning("Supabase data request failed: %s %s -> %s %s", method, path.split("?")[0], response.status_code, code or "no-code")
-        raise HTTPException(502, "projects-provider-error")
+        raise HTTPException(502, f"{area}-provider-error")
     try:
         return response.json()
     except ValueError as error:
-        raise HTTPException(502, "projects-invalid-response") from error
+        raise HTTPException(502, f"{area}-invalid-response") from error
 
 
 def document(value) -> Project:

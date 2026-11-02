@@ -19,6 +19,8 @@ from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectUpdate, ProjectWrite
 from ..projects import fetch_project, fetch_projects, remove_project, save_project
 from ..project_config import PROJECT_NAME_LENGTH
+from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
+from ..reports import ReportUploadRequest, complete_report, download_report, fetch_reports, remove_report, reserve_report
 from ..uniprot import UNIPROT_SEARCH_SIZE, fetch_entry, search_entries
 from ..residue_mapping import MAPPING_RESPONSE_MAX_BYTES, get_residue_mapping
 from . import convert
@@ -27,6 +29,7 @@ from .gen.proteinforge.account.v1 import account_service_pb as account_pb
 from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.reference.v1 import reference_service_pb as reference_pb
+from .gen.proteinforge.report.v1 import report_service_pb as report_pb
 from .gen.proteinforge.folding.v1 import folding_service_pb as folding_pb
 
 AUTHORIZATION_HEADER = "authorization"
@@ -56,11 +59,15 @@ class StateBound:
         return await resolve_identity(context.settings, context.http_client, token), token
 
 
-def project_id(value: str) -> UUID:
+def project_id(value: str, field: str = "id") -> UUID:
     try:
         return UUID(value)
     except ValueError as error:
-        raise ConnectError(Code.INVALID_ARGUMENT, "validation: id") from error
+        raise ConnectError(Code.INVALID_ARGUMENT, f"validation: {field}") from error
+
+
+def optional_id(value: str, field: str) -> UUID | None:
+    return project_id(value, field) if value else None
 
 
 class AccountService(StateBound):
@@ -145,6 +152,53 @@ class ProjectService(StateBound):
         _identity, token = await self.identity(ctx)
         await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"))
         return project_pb.DeleteProjectResponse()
+
+
+class ReportService(StateBound):
+    @rpc_errors
+    async def create_report_upload(self, request: report_pb.CreateReportUploadRequest, ctx: RequestContext) -> report_pb.CreateReportUploadResponse:
+        identity, token = await self.identity(ctx)
+        payload = ReportUploadRequest(project_id=optional_id(request.project_id, "project_id"), kind=convert.report_kind(request.kind), size_bytes=request.size_bytes, sha256=request.sha256)
+        upload = await reserve_report(self.context, identity, token, payload)
+        return report_pb.CreateReportUploadResponse(
+            report=convert.report_message(upload.report), upload_url=upload.upload_url,
+            content_type=upload.content_type, expire_time=convert.timestamp(upload.expires_at),
+        )
+
+    @rpc_errors
+    async def complete_report(self, request: report_pb.CompleteReportRequest, ctx: RequestContext) -> report_pb.CompleteReportResponse:
+        _identity, token = await self.identity(ctx)
+        return report_pb.CompleteReportResponse(report=convert.report_message(await complete_report(self.context, token, project_id(request.id))))
+
+    @rpc_errors
+    async def list_reports(self, request: report_pb.ListReportsRequest, ctx: RequestContext) -> report_pb.ListReportsResponse:
+        _identity, token = await self.identity(ctx)
+        if not 0 <= request.page_size <= MAX_REPORT_PAGE_SIZE:
+            raise ConnectError(Code.INVALID_ARGUMENT, "validation: page_size")
+        project = optional_id(request.project_id, "project_id")
+        # The token is bound to the project filter, and never valid for project listings.
+        scope = f"reports:{project or ''}"
+        offset = convert.page_offset(request.page_token, MAX_REPORT_OFFSET, scope)
+        listing = await fetch_reports(self.context, token, request.page_size or DEFAULT_REPORT_PAGE_SIZE, offset, project)
+        return report_pb.ListReportsResponse(
+            reports=[convert.report_message(item) for item in listing.items],
+            next_page_token=convert.page_token(listing.next_offset, scope),
+        )
+
+    @rpc_errors
+    async def create_report_download(self, request: report_pb.CreateReportDownloadRequest, ctx: RequestContext) -> report_pb.CreateReportDownloadResponse:
+        identity, token = await self.identity(ctx)
+        download = await download_report(self.context, identity, token, project_id(request.id))
+        return report_pb.CreateReportDownloadResponse(
+            report=convert.report_message(download.report), download_url=download.download_url,
+            file_name=download.file_name, expire_time=convert.timestamp(download.expires_at),
+        )
+
+    @rpc_errors
+    async def delete_report(self, request: report_pb.DeleteReportRequest, ctx: RequestContext) -> report_pb.DeleteReportResponse:
+        identity, token = await self.identity(ctx)
+        await remove_report(self.context, identity, token, project_id(request.id))
+        return report_pb.DeleteReportResponse()
 
 
 class ReferenceService(StateBound):

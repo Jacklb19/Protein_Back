@@ -16,6 +16,7 @@ from .config import API_PREFIX, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESP
 from .correlation import Correlation
 from .identity import CurrentIdentity
 from .projects import router as projects_router
+from .reports import router as reports_router
 from .uniprot import router as uniprot_router
 from .assistant import router as assistant_router
 from .assistant_cache import AssistantCache
@@ -80,6 +81,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unexpected_exception_handler)
     app.include_router(projects_router, prefix=API_PREFIX)
+    app.include_router(reports_router, prefix=API_PREFIX)
     app.include_router(uniprot_router, prefix=API_PREFIX)
     app.include_router(assistant_router, prefix=API_PREFIX)
     app.include_router(residue_mapping_router, prefix=API_PREFIX)

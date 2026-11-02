@@ -28,10 +28,12 @@ from ..projects import Workspace as WorkspaceModel
 from ..uniprot import EntrySummary as EntrySummaryModel
 from ..uniprot import UniProtEntry as EntryModel
 from ..residue_mapping import ResidueMappingResponse
+from ..reports import Report as ReportModel
 from .gen.proteinforge.assistant.v1 import assistant_service_pb as assistant_pb
 from .gen.proteinforge.project.v1 import project_service_pb as project_pb
 from .gen.proteinforge.project.v1 import workspace_pb
 from .gen.proteinforge.reference.v1 import reference_service_pb as reference_pb
+from .gen.proteinforge.report.v1 import report_service_pb as report_pb
 
 MATRICES = {
     workspace_pb.SubstitutionMatrix.BLOSUM45: "BLOSUM45",
@@ -50,6 +52,13 @@ SUBJECTS = {
 }
 ORDERS = {project_pb.ProjectOrder.UNSPECIFIED: DEFAULT_PROJECT_ORDER, project_pb.ProjectOrder.RECENT: PROJECT_ORDERS[0], project_pb.ProjectOrder.NAME: PROJECT_ORDERS[1]}
 PAGE_TOKEN_PREFIX = "offset:"
+REPORT_KIND_VALUES = {
+    report_pb.ReportKind.PDF: "pdf",
+    report_pb.ReportKind.JSON: "json",
+    report_pb.ReportKind.PROFILE_CSV: "profile-csv",
+    report_pb.ReportKind.ALIGNMENT_CSV: "alignment-csv",
+}
+REPORT_STATUSES = {"pending": report_pb.ReportStatus.PENDING, "ready": report_pb.ReportStatus.READY}
 
 
 def _reverse(mapping: dict) -> dict:
@@ -284,6 +293,18 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
             matrix=_reverse(MATRICES)[alignment.matrix], mode=_reverse(MODES)[alignment.mode],
             result=project_pb.ProjectAlignmentMetrics(identities=result.identities, similarities=result.similarities, columns=result.columns) if result else None,
         ) if alignment else None,
+    )
+
+
+def report_kind(value: report_pb.ReportKind) -> str:
+    return _enum(REPORT_KIND_VALUES, value, "kind")
+
+
+def report_message(report: ReportModel) -> report_pb.Report:
+    return report_pb.Report(
+        id=str(report.id), project_id=str(report.project_id) if report.project_id else "",
+        kind=_reverse(REPORT_KIND_VALUES)[report.kind], size_bytes=report.size_bytes, sha256=report.sha256,
+        status=REPORT_STATUSES[report.status], create_time=timestamp(report.created_at), complete_time=timestamp(report.completed_at),
     )
 
 

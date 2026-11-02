@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package proteinforge.report.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Reports generated in the browser (PDF, JSON, profile CSV, alignment CSV) and stored in a
+// private Supabase Storage bucket. The API never receives file bytes: it reserves a record,
+// returns a signed upload URL, and the browser uploads straight to Storage. Supabase receives
+// the user's own token, so row-level security decides ownership; another owner's report is
+// indistinguishable from a missing one (NOT_FOUND).
+//
+// Error codes: UNAUTHENTICATED, INVALID_ARGUMENT (kind, size, hash or ids fail validation),
+// NOT_FOUND ("report-not-found", or "project-not-found" for a project the caller does not own),
+// RESOURCE_EXHAUSTED ("report-quota-exceeded": per-owner count or byte quota),
+// FAILED_PRECONDITION ("report-upload-missing": no object of the reserved size and type;
+// "report-not-ready": download before completion; schema or bucket not set up on this server),
+// PERMISSION_DENIED, UNAVAILABLE / DEADLINE_EXCEEDED (data or storage service unreachable).
+// Equivalent REST routes: /v1/reports.
+service ReportService {
+  // Reserves a pending record and returns a signed upload URL valid for two hours. Unused
+  // reservations stop counting towards the quota once that URL has expired.
+  rpc CreateReportUpload(CreateReportUploadRequest) returns (CreateReportUploadResponse);
+
+  // Marks a pending report ready after Storage holds an object of the reserved size and type.
+  // Completing a ready report returns it unchanged.
+  rpc CompleteReport(CompleteReportRequest) returns (CompleteReportResponse);
+
+  // Owned reports, newest first, pending ones included.
+  rpc ListReports(ListReportsRequest) returns (ListReportsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Short-lived signed URL to download a ready report.
+  rpc CreateReportDownload(CreateReportDownloadRequest) returns (CreateReportDownloadResponse);
+
+  // Removes the stored object, then the record.
+  rpc DeleteReport(DeleteReportRequest) returns (DeleteReportResponse);
+}
+
+enum ReportKind {
+  REPORT_KIND_UNSPECIFIED = 0;
+  // application/pdf
+  REPORT_KIND_PDF = 1;
+  // application/json
+  REPORT_KIND_JSON = 2;
+  // text/csv, one row per residue.
+  REPORT_KIND_PROFILE_CSV = 3;
+  // text/csv, one row per alignment column.
+  REPORT_KIND_ALIGNMENT_CSV = 4;
+}
+
+enum ReportStatus {
+  REPORT_STATUS_UNSPECIFIED = 0;
+  // Reserved; the object may not be uploaded yet.
+  REPORT_STATUS_PENDING = 1;
+  REPORT_STATUS_READY = 2;
+}
+
+message Report {
+  // UUID.
+  string id = 1;
+  // UUID of the linked project; empty when unlinked or when the project was deleted.
+  string project_id = 2;
+  ReportKind kind = 3;
+  // 1–5,000,000 bytes.
+  int32 size_bytes = 4;
+  // Lowercase hexadecimal SHA-256 declared by the browser for the exact file bytes. Storage
+  // checks size and type; the hash identifies content for later verification, it is not a
+  // certificate of origin.
+  string sha256 = 5;
+  ReportStatus status = 6;
+  google.protobuf.Timestamp create_time = 7;
+  // Present once ready.
+  google.protobuf.Timestamp complete_time = 8;
+}
+
+message CreateReportUploadRequest {
+  // Optional UUID of an owned project.
+  string project_id = 1;
+  ReportKind kind = 2;
+  int32 size_bytes = 3;
+  string sha256 = 4;
+}
+
+message CreateReportUploadResponse {
+  Report report = 1;
+  // Absolute Storage URL; upload the file with PUT and the content type below.
+  string upload_url = 2;
+  string content_type = 3;
+  // End of the reservation window; the URL is not accepted afterwards.
+  google.protobuf.Timestamp expire_time = 4;
+}
+
+message CompleteReportRequest {
+  string id = 1;
+}
+
+message CompleteReportResponse {
+  Report report = 1;
+}
+
+message ListReportsRequest {
+  // 1–50; 0 means the server default of 20.
+  int32 page_size = 1;
+  // Opaque token from a previous response, bound to the same project filter.
+  string page_token = 2;
+  // Optional UUID: only reports linked to this project.
+  string project_id = 3;
+}
+
+message ListReportsResponse {
+  repeated Report reports = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message CreateReportDownloadRequest {
+  string id = 1;
+}
+
+message CreateReportDownloadResponse {
+  Report report = 1;
+  // Absolute Storage URL valid until expire_time; it asks the browser to save file_name.
+  string download_url = 2;
+  string file_name = 3;
+  google.protobuf.Timestamp expire_time = 4;
+}
+
+message DeleteReportRequest {
+  string id = 1;
+}
+
+message DeleteReportResponse {}
