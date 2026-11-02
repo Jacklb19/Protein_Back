@@ -1,5 +1,21 @@
 # Asistente de interpretación
 
+## Caché de lecturas verificadas — 1 nov 2026
+
+RF-11 pide no repetir envíos idénticos al proveedor. `app/assistant_cache.py` guarda en memoria del proceso las lecturas que **pasaron el verificador**, para que una solicitud idéntica se responda sin llamar a Groq. Sin dependencias nuevas, sin base de datos ni cambios de contrato.
+
+- **Clave.** SHA-256 de un JSON canónico con versión del prompt, modelo, identidad del solicitante, tema, idioma, hechos (etiqueta, valor, unidad) y secuencia. La versión (`PROMPT_VERSION`) es la huella del prompt de sistema, los temas, los idiomas y los parámetros de generación: cualquier edición del prompt retira las lecturas anteriores sin tocar la caché. Solo se conserva el hash: ni los hechos, ni la secuencia, ni la identidad quedan en claro fuera de la entrada en memoria.
+- **Aislamiento por usuario.** Los hechos pueden venir de secuencias privadas, así que la identidad forma parte de la clave: una lectura solo vuelve a quien la pidió. Dos usuarios con los mismos hechos generan dos llamadas al proveedor; se acepta ese coste a cambio de no filtrar lecturas entre cuentas.
+- **Qué se guarda.** Solo la `Interpretation` aceptada (texto, modelo, proveedor y fecha original). Los rechazos del verificador (`assistant-unverified-figure`), la cuota de Groq (429), los errores del proveedor y los tiempos agotados nunca se guardan: la solicitud siguiente vuelve a intentarlo. El verificador no cambia y la lectura servida es la misma que ya aceptó.
+- **Límites.** LRU acotado y de vida corta: `ASSISTANT_CACHE_TTL_SECONDS` (300 s por omisión) desde que se guarda, sin renovarse con los aciertos, y `ASSISTANT_CACHE_MAX_ENTRIES` (256). Con 0 en cualquiera de los dos la caché queda desactivada. Valores en `app/config.py` y `.env.example`. Por proceso, igual que el presupuesto: varias instancias no comparten entradas y un reinicio o despliegue la vacía.
+- **Presupuesto.** Un acierto **no** consume `ASSISTANT_REQUESTS_PER_MINUTE`. El presupuesto acota lo que este proceso reenvía a Groq y un acierto no reenvía nada; además, volver a abrir el mismo resultado no debe acabar en 429. Un fallo de caché sí lo consume, como antes, y una vez agotado el presupuesto solo se sirven lecturas ya guardadas del propio usuario. La comprobación de configuración (503) sigue siendo lo primero.
+- **`no-store`.** La respuesta conserva `Cache-Control: no-store`: la caché es interna del servidor y no autoriza a navegadores ni intermediarios a guardar la lectura.
+- **Límites conocidos.** Dos solicitudes idénticas simultáneas pueden llamar ambas al proveedor; no hay deduplicación en vuelo. Un acierto devuelve el `createdAt` original, no la hora de la segunda solicitud.
+
+Pendiente, sin tocar: la plantilla bilingüe de cuota agotada de la [propuesta](../../frontend/docs/assistant-proposal.md) necesita aprobación de redacción en la interfaz. Hoy la cuota agotada sigue respondiendo 429 `assistant-rate-limit`.
+
+Pruebas sin red ni proveedor real: acierto, fallo, caducidad sin renovación, desalojo LRU, caducadas antes que vivas, desactivación con 0, cambio de versión del prompt, clave distinta por usuario, modelo, idioma, tema, secuencia o hecho y sin datos en claro, rechazos y errores no guardados, acierto que no gasta presupuesto, REST y Connect compartiendo la lectura, y lectura de la configuración.
+
 ## Diagnóstico offline de los rechazos del 1 nov 2026
 
 Sin llamadas a Groq, sin `.env` ni datos privados. Se reconstruyeron los hechos que el Laboratorio envía para las variantes públicas 1–3 de 1UBQ sin editar (fixture `ubiquitin.json` y formato de `laboratoryFacts`) y se pasaron por el verificador respuestas plausibles escritas a mano.
@@ -99,7 +115,7 @@ Respuesta: `text` (hasta 4.000 caracteres), `model`, `provider` (`groq`) y `crea
 
 - Destino fijo `https://api.groq.com/openai/v1/chat/completions` con `GROQ_API_KEY` del servidor. El token del usuario nunca se reenvía y la clave no aparece en `repr`, respuestas ni logs.
 - Modelo `ASSISTANT_MODEL` (por omisión `openai/gpt-oss-120b`), temperatura 0,2, `reasoning_effort: low`, `include_reasoning: false` y hasta 2.048 tokens de completado, razonamiento incluido. Cambiar a un modelo sin razonamiento exige retirar esos dos parámetros.
-- Presupuesto por identidad: `ASSISTANT_REQUESTS_PER_MINUTE` (6 por omisión; 0 lo desactiva), por proceso y no global, igual que el de UniProt. Una solicitud inválida no lo consume.
+- Presupuesto por identidad: `ASSISTANT_REQUESTS_PER_MINUTE` (6 por omisión; 0 lo desactiva), por proceso y no global, igual que el de UniProt. Una solicitud inválida no lo consume, ni una lectura servida desde la [caché](#caché-de-lecturas-verificadas--1-nov-2026).
 - Tiempo máximo 30 s. Una respuesta truncada (`finish_reason` distinto de `stop`), vacía, mayor de 4.000 caracteres o mayor de 200.000 bytes se rechaza.
 
 ## Reglas del texto

@@ -18,6 +18,7 @@ from .identity import CurrentIdentity
 from .projects import router as projects_router
 from .uniprot import router as uniprot_router
 from .assistant import router as assistant_router
+from .assistant_cache import AssistantCache
 from .residue_mapping import router as residue_mapping_router
 from .sifts_cache import SiftsCache
 from .folding import FoldingGate, router as folding_router
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     # Shared by REST and RPC: one budget per signed-in caller for the queries this process forwards.
     app.state.uniprot_limiter = FixedWindowLimiter(resolved.uniprot_requests_per_minute)
     app.state.assistant_limiter = FixedWindowLimiter(resolved.assistant_requests_per_minute)
+    app.state.assistant_cache = AssistantCache(resolved.assistant_cache_ttl_seconds, resolved.assistant_cache_max_entries)
     app.state.sifts_cache = SiftsCache()
     app.state.folding_gate = FoldingGate()
     # RPC services share the app state with REST; added first so CORS wraps them too.

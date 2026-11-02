@@ -21,6 +21,10 @@ DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
 # Interpretations one signed-in caller may request each minute, per process. 0 disables the budget.
 DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE = 6
 DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
+# Verified readings kept per process so an identical request does not reach the provider again.
+# Short-lived and bounded; 0 in either setting disables the cache.
+DEFAULT_ASSISTANT_CACHE_TTL_SECONDS = 300.0
+DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES = 256
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -36,6 +40,8 @@ class Settings:
     groq_api_key: str = field(default="", repr=False)
     assistant_model: str = DEFAULT_ASSISTANT_MODEL
     assistant_requests_per_minute: int = DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE
+    assistant_cache_ttl_seconds: float = DEFAULT_ASSISTANT_CACHE_TTL_SECONDS
+    assistant_cache_max_entries: int = DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES
     folding_enabled: bool = False
 
     @property
@@ -65,6 +71,8 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     timeout = env.get("IDENTITY_TIMEOUT_SECONDS", "")
     budget = env.get("UNIPROT_REQUESTS_PER_MINUTE", "")
     assistant_budget = env.get("ASSISTANT_REQUESTS_PER_MINUTE", "")
+    cache_ttl = env.get("ASSISTANT_CACHE_TTL_SECONDS", "")
+    cache_entries = env.get("ASSISTANT_CACHE_MAX_ENTRIES", "")
     return Settings(
         allowed_origins=origins,
         supabase_url=env.get("SUPABASE_URL", "").strip().rstrip("/"),
@@ -74,5 +82,7 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         groq_api_key=env.get("GROQ_API_KEY", "").strip(),
         assistant_model=env.get("ASSISTANT_MODEL", "").strip() or DEFAULT_ASSISTANT_MODEL,
         assistant_requests_per_minute=int(assistant_budget) if assistant_budget else DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE,
+        assistant_cache_ttl_seconds=float(cache_ttl) if cache_ttl else DEFAULT_ASSISTANT_CACHE_TTL_SECONDS,
+        assistant_cache_max_entries=int(cache_entries) if cache_entries else DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES,
         folding_enabled=env.get("FOLDING_ENABLED", "").strip() == "enabled",
     )

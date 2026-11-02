@@ -6,6 +6,7 @@ every figure in its answer must come from the facts it received: an answer that 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -85,6 +86,15 @@ What the measures mean, so you explain them correctly:
 - Aliphatic index: relative volume of the aliphatic side chains of Ala, Val, Ile and Leu.
 - Hydropathy profile: Kyte–Doolittle averages over a sliding window; stretches above zero are hydrophobic.
 - Alignment: a score from a BLOSUM substitution matrix and gap penalties; identity counts identical aligned pairs and similarity also counts conservative substitutions."""
+
+
+def prompt_version(template: str = SYSTEM_PROMPT) -> str:
+    """Fingerprint of everything that shapes a reading besides the facts, so editing any of it retires cached readings."""
+    contract = {"prompt": template, "subjects": SUBJECTS, "languages": LANGUAGES, "temperature": ASSISTANT_TEMPERATURE, "reasoning": REASONING_EFFORT, "tokens": MAX_COMPLETION_TOKENS}
+    return hashlib.sha256(json.dumps(contract, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+PROMPT_VERSION = prompt_version()
 
 logger = logging.getLogger(__name__)
 # A figure written alone: not part of an identifier such as 1UBQ, E6K or A30.
@@ -226,6 +236,21 @@ def messages(request: InterpretRequest) -> list[dict[str, str]]:
     ]
 
 
+def cache_key(request: InterpretRequest, requester: str, model: str, version: str) -> str:
+    """Opaque key of one exact context. The caller is part of it: facts can come from private
+    sequences, so a reading is only ever served back to whoever asked for it."""
+    context = {
+        "version": version,
+        "model": model,
+        "requester": requester,
+        "subject": request.subject,
+        "language": request.language,
+        "facts": [fact.model_dump(exclude_none=True) for fact in request.facts],
+        "sequence": request.sequence,
+    }
+    return hashlib.sha256(json.dumps(context, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
 async def complete(context: ServiceContext, request: InterpretRequest) -> str:
     settings = context.settings
     payload = {
@@ -266,6 +291,11 @@ async def complete(context: ServiceContext, request: InterpretRequest) -> str:
 async def interpret(context: ServiceContext, request: InterpretRequest, requester: str) -> Interpretation:
     if not context.settings.assistant_enabled:
         raise HTTPException(503, "assistant-not-configured")
+    key = cache_key(request, requester, context.settings.assistant_model, PROMPT_VERSION)
+    cached = context.assistant_cache.get(key)
+    if cached is not None:
+        # The budget bounds what this process forwards to the provider; a reading served again forwards nothing.
+        return cached
     if not context.assistant_limiter.allow(requester):
         raise HTTPException(429, "assistant-rate-limit")
     text = await complete(context, request)
@@ -278,7 +308,10 @@ async def interpret(context: ServiceContext, request: InterpretRequest, requeste
             request.subject, request.language, " ".join(f"{kind}={count}" for kind, count in sorted(reasons.items())),
         )
         raise HTTPException(502, "assistant-unverified-figure")
-    return Interpretation(text=text, model=context.settings.assistant_model, created_at=datetime.now(timezone.utc).isoformat())
+    interpretation = Interpretation(text=text, model=context.settings.assistant_model, created_at=datetime.now(timezone.utc).isoformat())
+    # Stored only after the verifier accepted it: refusals and provider errors raised above never reach here.
+    context.assistant_cache.put(key, interpretation)
+    return interpretation
 
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])

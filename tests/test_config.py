@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.config import DEFAULT_ASSISTANT_MODEL, DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE, load_settings
+from app.config import DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES, DEFAULT_ASSISTANT_CACHE_TTL_SECONDS, DEFAULT_ASSISTANT_MODEL, DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE, DEFAULT_UNIPROT_REQUESTS_PER_MINUTE, load_settings
 
 
 class DotenvTests(unittest.TestCase):
@@ -71,3 +71,9 @@ class DotenvTests(unittest.TestCase):
         self.assertEqual(configured.assistant_model, "other/model")
         self.assertEqual(configured.assistant_requests_per_minute, 0)
         self.assertNotIn("gsk_secret", repr(configured))
+
+    def test_assistant_cache_bounds_come_from_the_environment(self):
+        unset = load_settings({})
+        self.assertEqual((unset.assistant_cache_ttl_seconds, unset.assistant_cache_max_entries), (DEFAULT_ASSISTANT_CACHE_TTL_SECONDS, DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES))
+        configured = load_settings({"ASSISTANT_CACHE_TTL_SECONDS": "30", "ASSISTANT_CACHE_MAX_ENTRIES": "0"})
+        self.assertEqual((configured.assistant_cache_ttl_seconds, configured.assistant_cache_max_entries), (30.0, 0))
