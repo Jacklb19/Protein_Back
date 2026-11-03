@@ -219,6 +219,32 @@ class RpcTests(unittest.TestCase):
         self.assertEqual(preflight.status_code, 200)
         self.assertEqual(health.json()["status"], "ok")
 
+    def test_malformed_bodies_are_invalid_arguments_without_parser_text(self):
+        malformed = {"code": "invalid_argument", "message": "malformed-request"}
+        listing = f"{PROJECTS}/ListProjects"
+        with self.client() as client:
+            truncated = client.post(listing, headers={**CONNECT, **TOKEN}, content=b'{"pageSize":')
+            mistyped = client.post(listing, headers={**CONNECT, **TOKEN}, content=b'{"pageSize": "many"}')
+            binary = client.post(listing, headers={"Content-Type": "application/proto", "Connect-Protocol-Version": "1", **TOKEN}, content=b"\xff\xff\xff")
+            gzip = client.post(listing, headers={**CONNECT, **TOKEN, "Content-Encoding": "gzip"}, content=b"not gzip")
+            web = client.post(listing, headers={"Content-Type": "application/grpc-web+proto", "X-Grpc-Web": "1", **TOKEN}, content=struct.pack(">BI", 0, 3) + b"\xff\xff\xff")
+        for response in (truncated, mistyped, binary, gzip):
+            with self.subTest(body=response.request.content[:12]):
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json(), malformed)
+        trailer = grpc_web_frames(web.content)[-1][1].replace(b" ", b"").lower()
+        self.assertIn(b"grpc-status:3", trailer)
+        self.assertIn(b"grpc-message:malformed-request", trailer)
+        self.assertNotIn(b"varint", web.content)
+
+    def test_unexpected_failures_are_internal_without_their_message(self):
+        def data(_request):
+            raise RuntimeError("secret upstream detail")
+        with self.client(data) as client, self.assertLogs("app.rpc.errors", "ERROR"):
+            response = self.call(client, f"{PROJECTS}/ListProjects", {}, TOKEN)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"code": "internal", "message": "internal"})
+
 
 if __name__ == "__main__":
     unittest.main()
