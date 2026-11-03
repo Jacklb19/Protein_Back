@@ -138,6 +138,24 @@ class RpcTests(unittest.TestCase):
         self.assertEqual(project["workspace"]["alignment"]["matrix"], "SUBSTITUTION_MATRIX_BLOSUM62")
         self.assertTrue(project["summary"]["updateTime"].startswith("2026-10-12T08:00:00.123456"))
 
+    def test_create_request_id_reaches_storage_and_is_validated(self):
+        request_id = "00000000-0000-4000-8000-0000000000aa"
+        bodies = []
+        def data(request):
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, json=DOCUMENT)
+        message = {"name": "Insulin study", "activeSequence": "ACD", "workspace": RPC_WORKSPACE}
+        with self.client(data) as client:
+            keyed = self.call(client, f"{PROJECTS}/CreateProject", {**message, "requestId": request_id}, TOKEN)
+            plain = self.call(client, f"{PROJECTS}/CreateProject", message, TOKEN)
+            invalid = self.call(client, f"{PROJECTS}/CreateProject", {**message, "requestId": "not-a-uuid"}, TOKEN)
+        self.assertEqual(keyed.status_code, 200, keyed.text)
+        self.assertEqual(plain.status_code, 200, plain.text)
+        self.assertEqual(bodies[0]["p_create_request_id"], request_id)
+        self.assertNotIn("p_create_request_id", bodies[1])
+        self.assertEqual(invalid.json(), {"code": "invalid_argument", "message": "validation: request_id"})
+        self.assertEqual(len(bodies), 2)
+
     def test_unset_optional_versions_stay_empty(self):
         # A bundled example has no entry version; it must reach the contract as null, not 0.
         source = {"origin": "SOURCE_ORIGIN_CATALOG", "accession": "P01308", "sequence": "ACD", "sequenceVersion": 1}

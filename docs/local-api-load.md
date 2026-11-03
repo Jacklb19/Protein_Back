@@ -27,4 +27,6 @@ Repetir deliberadamente desde backend:
 .venv/Scripts/python.exe -m scripts.audit_local_api
 ```
 
-El comando predeterminado tarda cinco minutos y guarda un nuevo informe local. Solo admite puertos5335–5339, duración1–300s y frecuencia1–100/minuto; no acepta una URL remota. Para comprobar arranque/cierre sin repetir el ensayo: `--seconds 3 --rate 100`. Cualquier fallo hace salir con código1. Esto acredita el carril local indicado; el rendimiento con proveedores reales sigue pendiente de una medición autorizada y acotada, sin dirigir carga a servicios compartidos.
+El comando predeterminado tarda cinco minutos y guarda un nuevo informe local. Solo admite puertos5296 y5335–5339, duración1–300s y frecuencia1–100/minuto; no acepta una URL remota. Para comprobar arranque/cierre sin repetir el ensayo: `--seconds 3 --rate 100`. Cualquier fallo hace salir con código1. Esto acredita el carril local indicado; el rendimiento con proveedores reales sigue pendiente de una medición autorizada y acotada, sin dirigir carga a servicios compartidos.
+
+Repetición del 1 nov 2026 con PostgreSQL local, migraciones y RLS reales en el listado: [informe](local-api-load-postgres-2026-11-01.md).

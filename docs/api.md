@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Informes en Storage — implementación local del 1 nov 2026
+
+[Propuesta y contrato](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/reports-storage-proposal-2026-11-01.md) (RF-14). `/v1/reports` (`POST` reserva y URL firmada de subida, `GET` lista, `POST /{id}/complete`, `POST /{id}/download`, `DELETE /{id}`) y `proteinforge.report.v1.ReportService`, autenticados. La API nunca recibe los bytes: el navegador sube directamente a Storage con la URL firmada; PostgREST y Storage reciben el JWT del usuario. Bucket privado `reports`, tabla `reports` con RLS, cuota por propietario y límites en `app/report_config.py`, repetidos en la migración [20261101000000_report_storage.sql](../supabase/migrations/20261101000000_report_storage.sql), aplicada por el propietario el 2 nov 2026 (declarado, sin inspección remota). Interfaz en el frontend detrás de `VITE_REPORT_STORAGE`, todavía sin activar.
+
 ## Predicción — implementación local del 30 oct 2026
 
 [Contrato y verificación](folding.md): `POST /v1/predictions/fold` y `FoldingService/Predict`, autenticados y desactivados por defecto. Secuencia exacta de 3–120 residuos más consentimiento por solicitud; respuesta PDB/hash/procedencia sin métricas inventadas. Comparte cuota REST/RPC y no envía el token al proveedor. Laboratorio portable v2 requiere workspace v4 y la migración nueva solo local `20261030000000_structure_predictions.sql`. Sin publicación ni aplicación remota. La implementación del historial mencionada abajo ya está publicada y su migración fue declarada aplicada por el propietario el 28 oct; las secciones fechadas conservan su contexto anterior.
@@ -36,7 +40,7 @@ También implementados GET /v1/uniprot/search y GET /v1/uniprot/{accession}; ver
 |---|---|---|
 | GET /v1/health | Estado del proceso, versión y si la identidad está configurada | Pública |
 | GET /v1/me | Identidad del portador del token: `id` (coincide con `profiles.id`) y `email` | Bearer JWT de Supabase |
-| POST /v1/projects | Crear proyecto/snapshot transaccional; 201 | Bearer JWT |
+| POST /v1/projects | Crear proyecto/snapshot transaccional; 201. `requestId` (UUID) opcional: repetirlo devuelve el proyecto ya creado | Bearer JWT |
 | GET /v1/projects | Listar propios sin secuencias, paginados | Bearer JWT |
 | GET /v1/projects/{id} | Abrir propio; ajeno/ausente: 404 | Bearer JWT |
 | PUT /v1/projects/{id} | Guardar o renombrar con versión conocida; 409 | Bearer JWT |
@@ -56,7 +60,7 @@ Contrato, límites, SECURITY INVOKER/RLS, pruebas reales y pasos externos de pro
 
 | Método y ruta | Propósito | Autenticación prevista |
 |---|---|---|
-| POST /v1/reports | Registrar informe generado en cliente | Requerida |
+| /v1/reports | Implementado localmente arriba; pendiente de migración remota y publicación | Requerida |
 
 `GET /v1/pdb/{id}/structure` y `GET /v1/catalog/domains` dejan de ser rutas necesarias: BinaryCIF público se descarga de RCSB y el catálogo se sirve como JSON estático. RF-17/RF-18 no tienen rutas hasta acordar persistencia de candidatos, consentimiento, validación de PDB y procedencia.
 
@@ -70,9 +74,12 @@ Contratos Protocol Buffers en `proto/proteinforge/`. `AccountService`, `ProjectS
 | --- | --- | --- |
 | `proteinforge.account.v1.AccountService` | `GetStatus`, `GetMe` | `GET /v1/health`, `GET /v1/me` |
 | `proteinforge.project.v1.ProjectService` | `ListProjects`, `GetProject`, `CreateProject`, `UpdateProject`, `DeleteProject` | `/v1/projects` |
+
+`CreateProjectRequest.request_id` (campo 4, local, sin publicar): UUID generado por el cliente; vacío conserva el comportamiento anterior. La pareja (propietario, `request_id`) es única: un reintento tras perder la respuesta devuelve el proyecto existente sin tocar su snapshot, y la misma clave en otra cuenta crea otro proyecto. Un valor que no es UUID responde `INVALID_ARGUMENT` `validation: request_id`. Requiere [20261102000000_project_create_idempotency.sql](../supabase/migrations/20261102000000_project_create_idempotency.sql); sin esa migración, un create con clave falla (`FAILED_PRECONDITION`/503) y uno sin clave sigue funcionando, porque la API solo envía `p_create_request_id` cuando existe.
 | `proteinforge.reference.v1.ReferenceService` | `SearchEntries`, `GetEntry` | `/v1/uniprot` |
 | `proteinforge.assistant.v1.AssistantService` | `Interpret` | `POST /v1/assistant/interpret` |
 | `proteinforge.folding.v1.FoldingService` (local, sin publicar) | `Predict` | `POST /v1/predictions/fold` |
+| `proteinforge.report.v1.ReportService` (local, sin publicar) | `CreateReportUpload`, `CompleteReport`, `ListReports`, `CreateReportDownload`, `DeleteReport` | `/v1/reports` |
 
 Rutas `POST /<paquete>.<Servicio>/<Método>` en la raíz (los clientes gRPC nativos no admiten prefijo). Cada servicio responde a tres protocolos según el `Content-Type`:
 

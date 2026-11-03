@@ -2,17 +2,21 @@
 import json
 import struct
 import unittest
+from unittest import mock
 
 import httpx
 from fastapi.testclient import TestClient
 
-from app.assistant import figures, known_figures, supported, InterpretRequest
+from app.assistant import PROMPT_VERSION, SCALE_FIGURES, SYSTEM_PROMPT, Interpretation, cache_key, figures, known_figures, prompt_version, refusal, supported, supported_proportions, InterpretRequest
+from app.assistant_cache import AssistantCache
 from app.config import Settings
 from app.main import create_app
 from app.rpc.gen.proteinforge.assistant.v1.assistant_service_pb import Fact, InterpretRequest as InterpretMessage, InterpretResponse, Subject
 
 USER = "00000000-0000-4000-8000-000000000001"
+OTHER_USER = "00000000-0000-4000-8000-000000000002"
 TOKEN = {"Authorization": "Bearer user-token"}
+OTHER_TOKEN = {"Authorization": "Bearer other-token"}
 CONNECT = {"Content-Type": "application/json", "Connect-Protocol-Version": "1"}
 ASSISTANT = "/proteinforge.assistant.v1.AssistantService"
 SERVER_KEY = "gsk_server_side_test_key"
@@ -30,12 +34,13 @@ def completion(text=ANSWER, finish="stop"):
 
 
 class AssistantTests(unittest.TestCase):
-    def client(self, provider=None, key=SERVER_KEY, requests_per_minute=0):
+    def client(self, provider=None, key=SERVER_KEY, requests_per_minute=0, cache_entries=0):
         self.sent = []
 
         def transport(request):
             if request.url.host == "project.supabase.co":
-                return httpx.Response(200, json={"id": USER, "email": "a@example.org"})
+                other = request.headers["Authorization"] == OTHER_TOKEN["Authorization"]
+                return httpx.Response(200, json={"id": OTHER_USER if other else USER, "email": "a@example.org"})
             self.assertEqual(str(request.url), "https://api.groq.com/openai/v1/chat/completions")
             # Only the server's key travels to the provider; the caller's token never does.
             self.assertEqual(request.headers["Authorization"], f"Bearer {SERVER_KEY}")
@@ -43,7 +48,8 @@ class AssistantTests(unittest.TestCase):
             self.sent.append(json.loads(request.content))
             return provider(request) if provider else completion()
 
-        settings = Settings(supabase_url="https://project.supabase.co", supabase_anon_key="public-key", groq_api_key=key, assistant_requests_per_minute=requests_per_minute)
+        # The cache is off unless a test asks for it, so each provider case is observed on its own.
+        settings = Settings(supabase_url="https://project.supabase.co", supabase_anon_key="public-key", groq_api_key=key, assistant_requests_per_minute=requests_per_minute, assistant_cache_max_entries=cache_entries)
         return TestClient(create_app(settings, httpx.AsyncClient(transport=httpx.MockTransport(transport))))
 
     def post(self, client, body=BODY, headers=TOKEN):
@@ -113,6 +119,16 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(result.status_code, 502)
             self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
             self.assertNotIn(answer, result.text)
+
+    def test_a_refusal_logs_only_kinds_and_counts(self):
+        answer = "La identidad es 42 de 76, alrededor del 55 %, y la mayoría de los residuos confía."
+        with self.assertLogs("app.assistant", "WARNING") as logs, self.client(lambda _: completion(answer)) as client:
+            result = self.post(client)
+        self.assertEqual(result.json()["detail"], "assistant-unverified-figure")
+        line = " ".join(logs.output)
+        self.assertIn("subject=laboratory language=es figure-percent=1 verbal-mayoria=1", line)
+        for private in ("55", "42", "MQIFVK", "residuos"):
+            self.assertNotIn(private, line)
 
     def test_preserves_a_verbal_quantity_explicitly_supplied_as_a_fact(self):
         body = {**BODY, "facts": [*BODY["facts"], {"label": "Clasificación calculada", "value": "Más de la mitad"}]}
@@ -185,6 +201,144 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(web.content[5:5 + length].decode(), "grpc-status: 9\r\ngrpc-message: assistant-not-configured\r\n")
         self.assertEqual(self.sent, [])
 
+    def test_identical_request_is_served_again_without_calling_the_provider(self):
+        message = {"subject": "SUBJECT_LABORATORY", "language": "es", "facts": BODY["facts"], "sequence": "MQIFVK"}
+        with self.client(cache_entries=8) as client:
+            first = self.post(client)
+            second = self.post(client)
+            connect = client.post(f"{ASSISTANT}/Interpret", headers={**CONNECT, **TOKEN}, content=json.dumps(message))
+            other_language = self.post(client, {**BODY, "language": "en"})
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.headers["Cache-Control"], "no-store")
+        self.assertEqual(second.json(), first.json())
+        # REST and RPC share the same verified reading for the same caller and context.
+        self.assertEqual(connect.json()["text"], first.json()["text"])
+        self.assertEqual(other_language.status_code, 200)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_a_cached_reading_is_never_served_to_another_caller(self):
+        with self.client(cache_entries=8) as client:
+            self.post(client)
+            other = self.post(client, headers=OTHER_TOKEN)
+        self.assertEqual(other.status_code, 200)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_refusals_and_provider_errors_are_not_cached(self):
+        invented = "La variante tiene un pLDDT medio de 95,2."
+        for provider, status in ((lambda _: completion(invented), 502), (lambda _: httpx.Response(429), 429), (lambda _: httpx.Response(500), 502)):
+            with self.subTest(status=status), self.client(provider, cache_entries=8) as client:
+                statuses = [self.post(client).status_code, self.post(client).status_code]
+            self.assertEqual(statuses, [status, status])
+            self.assertEqual(len(self.sent), 2)
+
+    def test_a_cache_hit_does_not_spend_the_budget_but_a_miss_still_does(self):
+        with self.client(requests_per_minute=1, cache_entries=8) as client:
+            self.assertEqual(self.post(client).status_code, 200)
+            self.assertEqual(self.post(client).status_code, 200)
+            refused = self.post(client, {**BODY, "language": "en"})
+        self.assertEqual(refused.status_code, 429)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_a_new_prompt_version_retires_cached_readings(self):
+        with self.client(cache_entries=8) as client:
+            self.post(client)
+            with mock.patch("app.assistant.PROMPT_VERSION", "next"):
+                self.post(client)
+        self.assertEqual(len(self.sent), 2)
+
+
+class AssistantCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.now = 0.0
+        self.cache = AssistantCache(ttl_seconds=10, max_entries=2, clock=lambda: self.now)
+
+    @staticmethod
+    def reading(text):
+        return Interpretation(text=text, model="model", created_at="2026-11-01T00:00:00+00:00")
+
+    def test_miss_then_hit(self):
+        self.assertIsNone(self.cache.get("a"))
+        self.cache.put("a", self.reading("A"))
+        self.assertEqual(self.cache.get("a").text, "A")
+
+    def test_entries_expire_and_a_hit_does_not_extend_them(self):
+        self.cache.put("a", self.reading("A"))
+        self.now = 9.9
+        self.assertIsNotNone(self.cache.get("a"))
+        self.now = 10.0
+        self.assertIsNone(self.cache.get("a"))
+        self.assertEqual(len(self.cache), 0)
+
+    def test_the_least_recently_used_entry_is_evicted(self):
+        self.cache.put("a", self.reading("A"))
+        self.cache.put("b", self.reading("B"))
+        self.cache.get("a")
+        self.cache.put("c", self.reading("C"))
+        self.assertIsNone(self.cache.get("b"))
+        self.assertEqual([self.cache.get(key).text for key in ("a", "c")], ["A", "C"])
+
+    def test_expired_entries_are_dropped_before_evicting_live_ones(self):
+        self.cache.put("a", self.reading("A"))
+        self.now = 5
+        self.cache.put("b", self.reading("B"))
+        self.now = 11
+        self.cache.put("c", self.reading("C"))
+        self.assertEqual([self.cache.get(key).text for key in ("b", "c")], ["B", "C"])
+
+    def test_zero_ttl_or_size_disables_it(self):
+        for cache in (AssistantCache(ttl_seconds=0, max_entries=2), AssistantCache(ttl_seconds=10, max_entries=0)):
+            cache.put("a", self.reading("A"))
+            self.assertFalse(cache.enabled)
+            self.assertIsNone(cache.get("a"))
+
+
+class CacheKeyTests(unittest.TestCase):
+    def test_the_key_binds_every_part_of_the_context_without_containing_it(self):
+        def key(body=BODY, requester=USER, model="model", version=PROMPT_VERSION):
+            return cache_key(InterpretRequest.model_validate(body), requester, model, version)
+
+        changed_fact = [{**BODY["facts"][0], "value": "93,4"}, *BODY["facts"][1:]]
+        variants = [key(requester=OTHER_USER), key(model="other"), key(version="next"), key({**BODY, "language": "en"}), key({**BODY, "subject": "analysis"}), key({**BODY, "sequence": None}), key({**BODY, "facts": changed_fact})]
+        self.assertEqual(key(), key())
+        self.assertEqual(len({key(), *variants}), len(variants) + 1)
+        for private in (USER, "93,39", "MQIFVK", "pLDDT"):
+            self.assertNotIn(private, key())
+
+    def test_editing_the_prompt_changes_its_version(self):
+        self.assertEqual(prompt_version(), PROMPT_VERSION)
+        self.assertNotEqual(prompt_version(SYSTEM_PROMPT + " "), PROMPT_VERSION)
+
+
+class PromptRuleTests(unittest.TestCase):
+    """The rules added after the 1 Nov review, pinned so they are not dropped silently."""
+
+    def test_prompt_asks_what_measures_report_and_forbids_outside_figures_and_inferences(self):
+        for language in ("Spanish", "English"):
+            prompt = SYSTEM_PROMPT.format(subject="a protein design laboratory", language=language)
+            self.assertIn(f"Write in {language}.", prompt)
+            self.assertIn("what each measure reports for these values", prompt)
+            self.assertNotIn("what these values suggest", prompt)
+            self.assertIn("Cite no threshold, range or reference value other than those in the glossary", prompt)
+            self.assertIn("Never say that all, every, none, or any share of the residues reach a level because of a mean", prompt)
+            self.assertIn("Do not compare with variants, structures, references or results that are not in the facts", prompt)
+            self.assertIn("Never claim that the protein folds, folds correctly, is stable or has a function", prompt)
+
+    def test_prompt_keeps_a_mean_whole_and_skips_absent_measures(self):
+        # Real Groq readings of 1 Nov turned a mean pLDDT into "most residues" and gave an analysis
+        # a protected-position count it never received.
+        for language in ("Spanish", "English"):
+            prompt = SYSTEM_PROMPT.format(subject="a protein design laboratory", language=language)
+            self.assertIn("Describe a mean local confidence only as one average over the whole chain", prompt)
+            self.assertIn("Do not attribute that confidence to residues, regions or parts of the chain", prompt)
+            self.assertIn("A mean pLDDT is one average for the chain, not a count of confident residues", prompt)
+            self.assertIn("Explain only the measures present in the facts", prompt)
+            self.assertIn("never state a value for them, not even zero or none", prompt)
+
+    def test_no_ptm_bound_is_taught_or_allowed(self):
+        # A pTM cut-off would be a new scientific figure; the glossary keeps only the 0 to 1 scale.
+        self.assertIn("from 0 to 1. It is not a comparison", SYSTEM_PROMPT)
+        self.assertNotIn("0.5", SYSTEM_PROMPT)
+        self.assertEqual(SCALE_FIGURES, (40, 50, 70, 90, 100))
 
 class FigureTests(unittest.TestCase):
     def known(self, *values, sequence=None):
@@ -221,6 +375,60 @@ class FigureTests(unittest.TestCase):
     def test_a_long_numeric_fact_does_not_break_checking_other_figures(self):
         known = self.known("9" * 100 + ".12")
         self.assertFalse(self.accepted("Una medida de 84,46.", known))
+
+
+def laboratory(sample, plddt, rmsd, ptm, identical, language="es"):
+    """The facts the laboratory screen sends for an unedited public 1UBQ variant (1 Nov 2026)."""
+    labels = {
+        "es": ("Muestra", f"Variante {sample}", "Referencia experimental", "Longitud", "residuos", "Confianza local media / 100", "RMSD Cα frente a la referencia", "Identidad posicional con la referencia", f"{identical} de 76", "Posiciones protegidas"),
+        "en": ("Sample", f"Variant {sample}", "Experimental reference", "Length", "residues", "Mean local confidence / 100", "Cα RMSD against the reference", "Positional identity with the reference", f"{identical} of 76", "Protected positions"),
+    }[language]
+    sample_label, sample_value, reference, length, residues, confidence, rmsd_label, identity, identity_value, protected = labels
+    return InterpretRequest.model_validate({"subject": "laboratory", "language": language, "facts": [
+        {"label": sample_label, "value": sample_value}, {"label": reference, "value": "1UBQ"},
+        {"label": length, "value": "76", "unit": residues}, {"label": confidence, "value": plddt},
+        {"label": rmsd_label, "value": rmsd, "unit": "Å"}, {"label": "pTM", "value": ptm},
+        {"label": identity, "value": identity_value}, {"label": protected, "value": "0"},
+    ]})
+
+
+VARIANTS = [laboratory(1, "93,39", "0,822", "0,863", 42), laboratory(2, "93,47", "0,751", "0,861", 41), laboratory(3, "92,92", "1,211", "0,858", 40)]
+
+
+class PublicVariantReplayTests(unittest.TestCase):
+    """Plausible answers for the three public variants refused on 1 Nov, replayed offline."""
+
+    def test_faithful_answers_are_accepted_for_each_variant(self):
+        for request in VARIANTS:
+            plddt, rmsd, ptm, identity = (request.facts[index].value for index in (3, 4, 5, 6))
+            answer = (
+                f"Estos resultados describen una variante diseñada sobre 1UBQ. La confianza local media es {plddt} sobre 100, "
+                f"por encima de 90, el tramo muy alto de una escala de 0 a 100. La pTM es {ptm}, en una escala de 0 a 1. "
+                f"El RMSD Cα es {rmsd} Å y la identidad posicional es {identity}; hay 0 posiciones protegidas en 76 residuos."
+            )
+            with self.subTest(sample=request.facts[0].value):
+                self.assertEqual(refusal(answer, request), {})
+
+    def test_invented_thresholds_derived_counts_and_proportions_stay_refused(self):
+        cases = [
+            ("La pTM supera el umbral habitual de 0,5.", {"figure-decimal": 1}),
+            ("Un RMSD inferior a 1,5 Å se considera muy similar.", {"figure-decimal": 1}),
+            ("Así que 34 posiciones cambian respecto a 1UBQ.", {"figure-integer": 1}),
+            ("Equivale a un 55 % de identidad.", {"figure-percent": 1}),
+            ("La mayoría de los residuos tiene confianza muy alta.", {"verbal-mayoria": 1}),
+        ]
+        for request in VARIANTS:
+            for answer, reasons in cases:
+                with self.subTest(sample=request.facts[0].value, answer=answer):
+                    self.assertEqual(refusal(answer, request), reasons)
+        self.assertEqual(refusal("La confianza media es 93,3.", VARIANTS[0]), {"figure-near-known": 1})
+
+    def test_english_ordinals_and_upper_bounds_are_not_proportions(self):
+        request = laboratory(3, "92.92", "1.211", "0.858", 40, language="en")
+        for answer in ["This is the third variant designed on 1UBQ.", "The mean confidence of 92.92 is at most 100."]:
+            self.assertTrue(supported_proportions(answer, request), answer)
+        for answer in ["About a third of the residues differ.", "Most residues are confident.", "At most half of the positions differ.", "The third of the positions that changed.", "Variant 3 is the most similar."]:
+            self.assertFalse(supported_proportions(answer, request), answer)
 
 
 if __name__ == "__main__":

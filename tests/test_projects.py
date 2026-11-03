@@ -59,6 +59,25 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(forged.status_code, 422)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
+    def test_create_request_id_is_forwarded_only_when_sent(self):
+        import json
+        request_id = "00000000-0000-4000-8000-0000000000aa"
+        bodies = []
+        def data(request):
+            bodies.append(json.loads(request.content))
+            return httpx.Response(200, json=DOCUMENT)
+        with self.client(data) as client:
+            plain = client.post("/v1/projects", headers=HEADERS, json=WRITE)
+            keyed = client.post("/v1/projects", headers=HEADERS, json={**WRITE, "requestId": request_id})
+            invalid = client.post("/v1/projects", headers=HEADERS, json={**WRITE, "requestId": "not-a-uuid"})
+            update = client.put(f"/v1/projects/{PROJECT}", headers=HEADERS, json={**WRITE, "expectedUpdatedAt": DATE, "requestId": request_id})
+        self.assertEqual((plain.status_code, keyed.status_code, invalid.status_code, update.status_code), (201, 201, 422, 422))
+        # Older databases lack the parameter, so an unkeyed create must not mention it.
+        self.assertEqual(len(bodies), 2)
+        self.assertNotIn("p_create_request_id", bodies[0])
+        self.assertEqual(bodies[1]["p_create_request_id"], request_id)
+        self.assertIsNone(bodies[1]["p_id"])
+
     def test_listing_has_owner_filter_and_bounded_pagination(self):
         def data(request):
             import json

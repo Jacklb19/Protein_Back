@@ -10,7 +10,8 @@ import "proteinforge/project/v1/workspace.proto";
 // indistinguishable from a missing one (NOT_FOUND).
 //
 // Writes use optimistic concurrency: updates and deletes send the update_time they last saw
-// and fail with ABORTED when the project changed meanwhile.
+// and fail with ABORTED when the project changed meanwhile. Creates may carry a client
+// request_id so a retry after a lost response returns the project it already created.
 //
 // Error codes: UNAUTHENTICATED (missing or invalid token), INVALID_ARGUMENT (field or
 // snapshot fails validation; details name fields, never sequence values), NOT_FOUND,
@@ -28,7 +29,8 @@ service ProjectService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // Creates the project and its snapshot in one transaction.
+  // Creates the project and its snapshot in one transaction. Repeating a request_id the
+  // caller already used returns that project unchanged instead of creating another one.
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
 
   // Replaces name, active sequence and workspace; also used to rename.
@@ -143,6 +145,10 @@ message CreateProjectRequest {
   string name = 1;
   string active_sequence = 2;
   Workspace workspace = 3;
+  // Optional client-generated UUID that makes the create idempotent per owner. Empty keeps
+  // the previous behaviour (every call creates a project); another owner's identical value
+  // never matches.
+  string request_id = 4;
 }
 
 message CreateProjectResponse {

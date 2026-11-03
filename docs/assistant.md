@@ -1,5 +1,81 @@
 # Asistente de interpretación
 
+## Caché de lecturas verificadas — 1 nov 2026
+
+RF-11 pide no repetir envíos idénticos al proveedor. `app/assistant_cache.py` guarda en memoria del proceso las lecturas que **pasaron el verificador**, para que una solicitud idéntica se responda sin llamar a Groq. Sin dependencias nuevas, sin base de datos ni cambios de contrato.
+
+- **Clave.** SHA-256 de un JSON canónico con versión del prompt, modelo, identidad del solicitante, tema, idioma, hechos (etiqueta, valor, unidad) y secuencia. La versión (`PROMPT_VERSION`) es la huella del prompt de sistema, los temas, los idiomas y los parámetros de generación: cualquier edición del prompt retira las lecturas anteriores sin tocar la caché. Solo se conserva el hash: ni los hechos, ni la secuencia, ni la identidad quedan en claro fuera de la entrada en memoria.
+- **Aislamiento por usuario.** Los hechos pueden venir de secuencias privadas, así que la identidad forma parte de la clave: una lectura solo vuelve a quien la pidió. Dos usuarios con los mismos hechos generan dos llamadas al proveedor; se acepta ese coste a cambio de no filtrar lecturas entre cuentas.
+- **Qué se guarda.** Solo la `Interpretation` aceptada (texto, modelo, proveedor y fecha original). Los rechazos del verificador (`assistant-unverified-figure`), la cuota de Groq (429), los errores del proveedor y los tiempos agotados nunca se guardan: la solicitud siguiente vuelve a intentarlo. El verificador no cambia y la lectura servida es la misma que ya aceptó.
+- **Límites.** LRU acotado y de vida corta: `ASSISTANT_CACHE_TTL_SECONDS` (300 s por omisión) desde que se guarda, sin renovarse con los aciertos, y `ASSISTANT_CACHE_MAX_ENTRIES` (256). Con 0 en cualquiera de los dos la caché queda desactivada. Valores en `app/config.py` y `.env.example`. Por proceso, igual que el presupuesto: varias instancias no comparten entradas y un reinicio o despliegue la vacía.
+- **Presupuesto.** Un acierto **no** consume `ASSISTANT_REQUESTS_PER_MINUTE`. El presupuesto acota lo que este proceso reenvía a Groq y un acierto no reenvía nada; además, volver a abrir el mismo resultado no debe acabar en 429. Un fallo de caché sí lo consume, como antes, y una vez agotado el presupuesto solo se sirven lecturas ya guardadas del propio usuario. La comprobación de configuración (503) sigue siendo lo primero.
+- **`no-store`.** La respuesta conserva `Cache-Control: no-store`: la caché es interna del servidor y no autoriza a navegadores ni intermediarios a guardar la lectura.
+- **Límites conocidos.** Dos solicitudes idénticas simultáneas pueden llamar ambas al proveedor; no hay deduplicación en vuelo. Un acierto devuelve el `createdAt` original, no la hora de la segunda solicitud.
+
+Pendiente, sin tocar: la plantilla bilingüe de cuota agotada de la [propuesta](../../frontend/docs/assistant-proposal.md) necesita aprobación de redacción en la interfaz. Hoy la cuota agotada sigue respondiendo 429 `assistant-rate-limit`.
+
+Pruebas sin red ni proveedor real: acierto, fallo, caducidad sin renovación, desalojo LRU, caducadas antes que vivas, desactivación con 0, cambio de versión del prompt, clave distinta por usuario, modelo, idioma, tema, secuencia o hecho y sin datos en claro, rechazos y errores no guardados, acierto que no gasta presupuesto, REST y Connect compartiendo la lectura, y lectura de la configuración.
+
+## Diagnóstico offline de los rechazos del 1 nov 2026
+
+Sin llamadas a Groq, sin `.env` ni datos privados. Se reconstruyeron los hechos que el Laboratorio envía para las variantes públicas 1–3 de 1UBQ sin editar (fixture `ubiquitin.json` y formato de `laboratoryFacts`) y se pasaron por el verificador respuestas plausibles escritas a mano.
+
+| Variante | Confianza media | RMSD Cα | pTM | Identidad | Longitud / protegidas |
+|---|---|---|---|---|---|
+| 1 | 93,39 | 0,822 Å | 0,863 | 42 de 76 | 76 / 0 |
+| 2 | 93,47 | 0,751 Å | 0,861 | 41 de 76 | 76 / 0 |
+| 3 | 92,92 | 1,211 Å | 0,858 | 40 de 76 | 76 / 0 |
+
+**Medido (offline):**
+
+- Una respuesta fiel en español, con las cifras copiadas o redondeadas, escalas 0–100 y 0–1, cotas 50/70/90, «0 posiciones protegidas» y «76 residuos», se acepta en las tres variantes. Rangos con guion (`70-90`), `93,39/100` y `0,822Å` también.
+- Se rechazan, en las tres: umbrales ajenos al glosario (pTM `0,5`, RMSD `1,0`/`1,5` Å), recuentos derivados (`34 posiciones cambian`), porcentajes (`55 %`, `86 %`) y «la mayoría de los residuos» a partir de una media. Son rechazos correctos según la regla: ninguna de esas cifras o proporciones viene en los datos.
+- Falsos positivos encontrados: en inglés, «at most» y el ordinal «the third variant» se tomaban como proporciones. Corregido: solo se apartan esas frases exactas; «a third of», «most residues», «at most half» y «the most similar» siguen rechazándose. En español no se encontró ninguna clase de falso positivo plausible; quedan casos raros como «en su mayoría, estas cifras…» o «variantes 1,2 y 3» sin espacio, que se siguen rechazando.
+- La única salida real conservada con estas mismas cifras (26 oct, variante 1) decía «la mayoría de los residuos» y «más de la mitad»: hoy se rechaza.
+
+**Supuesto, no demostrado:** los tres rechazos del 1 nov fueron probablemente infracciones reales de las reglas (proporción verbal desde la media o umbral de memoria como pTM 0,5), no un fallo del verificador. No se puede confirmar: el texto descartado no se guardó y no se sabe si la interfaz estaba en español o inglés. Veredicto: **sin determinar**, con indicios de rechazo legítimo.
+
+**Diagnóstico nuevo en logs.** El aviso de rechazo añade ahora tema, idioma y recuentos por tipo, por ejemplo `subject=laboratory language=es figure-percent=1 verbal-mayoria=1`. Tipos de cifra: `percent` (seguida de %), `near-known` (a una unidad de su último decimal de un valor conocido: suele ser un redondeo o truncado mal hecho, pero también puede ser un umbral que coincide por azar), `integer` y `decimal`. Las proporciones verbales salen con su término de la lista fija. Nunca se registran las cifras, la prosa ni la secuencia. Sin cambios de contrato ni de código de error.
+
+### Lectura crítica de salidas aceptadas
+
+Respuestas escritas a mano que el verificador **acepta** en las tres variantes; veredicto sobre su contenido:
+
+| Salida aceptada | Veredicto |
+|---|---|
+| Copia las cuatro cifras, explica escalas y dice que la media no indica cuántos residuos superan 90 | Correcta |
+| «Todos los residuos tienen confianza muy alta» desde la media | Incorrecta: distribución inferida; «todos» no está en la lista verbal |
+| «Se plegará correctamente y será estable» | Incorrecta: afirma plegamiento y estabilidad; no hay cifra que el verificador pueda detectar |
+| «Un pLDDT superior a 90 en el 93 % de la cadena» | Incorrecta: el 93 coincide con el redondeo de la media y se acepta |
+| «Una pTM superior a 0,8 indica alta calidad» (variantes 1 y 2) | Incorrecta: umbral de memoria; 0,8 coincide con el redondeo del RMSD. En la variante 3 se rechaza |
+| «Mejor RMSD que las otras dos variantes» | Sin apoyo: solo se envía una variante |
+| «Prácticamente idéntica a 1UBQ» por el RMSD | Exagerada: juicio cualitativo no medido |
+
+El verificador comprueba valores, no a qué medida se atribuyen ni la semántica. Estos casos dependen del prompt.
+
+### Cambios de prompt aplicados (decisión de coordinación, 1 nov)
+
+El prompt es uno solo, en inglés, con el idioma como parámetro: las reglas valen igual para es y en.
+
+1. «what these values suggest» pasa a «what each measure reports for these values», que invita menos a inferir.
+2. Ninguna cota, rango o valor de referencia fuera del glosario; si el glosario no da ninguna para una medida, no se da.
+3. Nada de «todos», «ninguno» o una parte de los residuos a partir de una media.
+4. Ninguna comparación con variantes, estructuras, referencias o resultados que no estén en los datos.
+5. No afirmar que la proteína se pliega, se pliega bien, es estable o tiene función: pTM y pLDDT describen la confianza del predictor en su propio modelo.
+
+No se añade cota de pTM: sería una cifra científica nueva y no nos corresponde. Opción aplazada: añadir «todos/all» a la lista verbal. Sin salidas reales que la comprueben podría crear falsos positivos nuevos.
+
+Estas reglas son instrucciones al modelo. El verificador sigue sin detectar estas inferencias cuando no llevan cifras.
+
+**Medición real posterior, 1 nov** ([informe](assistant-real-measurement-2026-11-01.md)). Con Groq y hechos públicos idénticos a los de la interfaz, el prompt anterior dio 7 de 13 aceptadas, sin contar tres 429 de cuota. Los 6 rechazos fueron legítimos (`verbal-mayoria`/`verbal-most`: «alta confianza a la mayoría de los residuos» deducido de la media) y no hubo falso positivo del verificador. Se añadieron dos reglas:
+
+6. Describir la confianza local media solo como un promedio de toda la cadena en una banda de la escala, sin atribuirla a residuos, regiones o partes. El glosario de pLDDT lo repite.
+7. Explicar solo las medidas presentes en los hechos, sin dar valor a las ausentes, ni siquiera cero; una lectura de insulina había inventado «zero fixed positions».
+
+Con ellas se aceptaron 16 de 16. En las 23 aceptadas, todas las cifras coinciden con sus hechos y ninguna afirma plegamiento, estabilidad ni función. Quedan imprecisiones cualitativas sin cifra. Ajuste local, sin publicar.
+
+Pruebas: `PromptRuleTests` (las reglas nuevas presentes en el prompt para es y en, sin cota de pTM ni cambio de `SCALE_FIGURES`), `PublicVariantReplayTests` (respuestas fieles aceptadas; umbrales, recuentos, porcentajes y proporciones rechazados; ordinal y «at most» en inglés aceptados con proporciones vecinas aún rechazadas) y una prueba de que el log contiene solo tipos y recuentos.
+
 ## Corrección local del 29 oct 2026: signos y decimales largos
 
 La [revisión local](review-continuation-2026-10-29.md) demostró y corrigió un cambio de signo que el verificador aceptaba: `GRAVY -0,532` podía reaparecer como `0,532`. Ahora conserva `+`, `-` y `−`, limita la excepción de enteros a 0–20 y evita que un hecho numérico muy largo provoque `Decimal.InvalidOperation`. Tres regresiones fallaron antes del arreglo y pasan después. Sin cambios de contrato ni publicación. Esta guarda no certifica la semántica completa de las lecturas reales.
@@ -39,7 +115,7 @@ Respuesta: `text` (hasta 4.000 caracteres), `model`, `provider` (`groq`) y `crea
 
 - Destino fijo `https://api.groq.com/openai/v1/chat/completions` con `GROQ_API_KEY` del servidor. El token del usuario nunca se reenvía y la clave no aparece en `repr`, respuestas ni logs.
 - Modelo `ASSISTANT_MODEL` (por omisión `openai/gpt-oss-120b`), temperatura 0,2, `reasoning_effort: low`, `include_reasoning: false` y hasta 2.048 tokens de completado, razonamiento incluido. Cambiar a un modelo sin razonamiento exige retirar esos dos parámetros.
-- Presupuesto por identidad: `ASSISTANT_REQUESTS_PER_MINUTE` (6 por omisión; 0 lo desactiva), por proceso y no global, igual que el de UniProt. Una solicitud inválida no lo consume.
+- Presupuesto por identidad: `ASSISTANT_REQUESTS_PER_MINUTE` (6 por omisión; 0 lo desactiva), por proceso y no global, igual que el de UniProt. Una solicitud inválida no lo consume, ni una lectura servida desde la [caché](#caché-de-lecturas-verificadas--1-nov-2026).
 - Tiempo máximo 30 s. Una respuesta truncada (`finish_reason` distinto de `stop`), vacía, mayor de 4.000 caracteres o mayor de 200.000 bytes se rechaza.
 
 ## Reglas del texto
@@ -85,6 +161,6 @@ Verificación: 16/16 pruebas del asistente y diagnóstico correctas, con identid
 
 ## Publicación de futuras correcciones
 
-Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). Sigue pendiente el diagnóstico técnico y la lectura crítica de respuestas aceptadas.
+Revisión posterior del 1 nov 2026: se solicitaron lecturas de las tres variantes públicas de 1UBQ desde la API local con sesión real. Las tres se descartaron con `502 assistant-unverified-figure`; no se mostró prosa que pudiera certificar. No se leyó el texto descartado, por lo que no se distingue una cantidad inventada de un posible falso positivo. No se debilitaron las reglas ni se insistió buscando una salida favorable. [Casos, cifras y límites](../../frontend/docs/readiness-2026-11-01.md). El diagnóstico offline y la lectura crítica están en [Diagnóstico offline de los rechazos del 1 nov 2026](#diagnóstico-offline-de-los-rechazos-del-1-nov-2026); la causa exacta de estos tres sigue sin determinar.
 
 La entrega del 26 oct ya se publicó: backend `main` `a3edaf1d7a43ada2b2bbf9113ff9ccef7f123a57`; frontend fija ese commit y su generación remota no produjo diferencias. No repetir publicación ni migraciones. Una entrega futura necesita su propia autorización; si cambia el contrato, mantener el orden backend→pin/regeneración→frontend. La regresión local añadida aquí solo cambia pruebas y documentación del backend.

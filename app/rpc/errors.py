@@ -30,6 +30,10 @@ STATUS_CODES: dict[int, Code] = {
 # Failures that mean "this server is not set up for it" rather than "try again".
 DETAIL_CODES: dict[str, Code] = {
     "projects-schema-unavailable": Code.FAILED_PRECONDITION,
+    "reports-schema-unavailable": Code.FAILED_PRECONDITION,
+    "reports-storage-unavailable": Code.FAILED_PRECONDITION,
+    "report-upload-missing": Code.FAILED_PRECONDITION,
+    "report-not-ready": Code.FAILED_PRECONDITION,
     "identity-not-configured": Code.FAILED_PRECONDITION,
     "assistant-not-configured": Code.FAILED_PRECONDITION,
     "folding-not-configured": Code.FAILED_PRECONDITION,
