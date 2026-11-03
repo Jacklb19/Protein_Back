@@ -39,6 +39,11 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.allowed_origins, ("http://localhost:5173",))
         self.assertFalse(settings.identity_enabled)
 
+    def test_api_docs_are_opt_in(self):
+        self.assertFalse(load_settings({}).api_docs_enabled)
+        self.assertFalse(load_settings({"API_DOCS_ENABLED": "true"}).api_docs_enabled)
+        self.assertTrue(load_settings({"API_DOCS_ENABLED": "enabled"}).api_docs_enabled)
+
 
 class ApiTests(unittest.TestCase):
     def client(self, handler=user_endpoint, settings: Settings = SETTINGS) -> TestClient:
@@ -50,6 +55,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok", "version": "0.1.0", "identity": True})
         self.assertTrue(response.headers["X-Request-Id"])
+
+    def test_docs_and_schema_are_served_only_when_enabled(self):
+        paths = ("/docs", "/redoc", "/openapi.json")
+        with self.client() as client:
+            hidden = {path: client.get(path).status_code for path in paths}
+        with self.client(settings=Settings(api_docs_enabled=True)) as client:
+            shown = {path: client.get(path).status_code for path in paths}
+            schema = client.get("/openapi.json").json()
+        self.assertEqual(hidden, dict.fromkeys(paths, 404))
+        self.assertEqual(shown, dict.fromkeys(paths, 200))
+        self.assertIn("/v1/health", schema["paths"])
 
     def test_cors_allows_only_configured_origins(self):
         with self.client() as client:
