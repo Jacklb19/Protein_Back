@@ -2,7 +2,7 @@
 
 ## Informes en Storage — implementación local del 1 nov 2026
 
-[Propuesta y contrato](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/reports-storage-proposal-2026-11-01.md) (RF-14). `/v1/reports` (`POST` reserva y URL firmada de subida, `GET` lista, `POST /{id}/complete`, `POST /{id}/download`, `DELETE /{id}`) y `proteinforge.report.v1.ReportService`, autenticados. La API nunca recibe los bytes: el navegador sube directamente a Storage con la URL firmada; PostgREST y Storage reciben el JWT del usuario. Bucket privado `reports`, tabla `reports` con RLS, cuota por propietario y límites en `app/report_config.py`, repetidos en la migración nueva solo local [20261101000000_report_storage.sql](../supabase/migrations/20261101000000_report_storage.sql). **No aplicada en Supabase**; sin interfaz ni publicación.
+[Propuesta y contrato](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/reports-storage-proposal-2026-11-01.md) (RF-14). `/v1/reports` (`POST` reserva y URL firmada de subida, `GET` lista, `POST /{id}/complete`, `POST /{id}/download`, `DELETE /{id}`) y `proteinforge.report.v1.ReportService`, autenticados. La API nunca recibe los bytes: el navegador sube directamente a Storage con la URL firmada; PostgREST y Storage reciben el JWT del usuario. Bucket privado `reports`, tabla `reports` con RLS, cuota por propietario y límites en `app/report_config.py`, repetidos en la migración [20261101000000_report_storage.sql](../supabase/migrations/20261101000000_report_storage.sql), aplicada por el propietario el 2 nov 2026 (declarado, sin inspección remota). Interfaz en el frontend detrás de `VITE_REPORT_STORAGE`, todavía sin activar.
 
 ## Predicción — implementación local del 30 oct 2026
 
