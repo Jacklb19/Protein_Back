@@ -1,4 +1,5 @@
 """RPC contracts over Connect (JSON) and gRPC-Web (binary), with simulated Supabase and UniProt transports."""
+import base64
 import json
 import struct
 import unittest
@@ -71,6 +72,23 @@ class RpcTests(unittest.TestCase):
                     response = self.call(client, path, message)
                     self.assertEqual(response.status_code, 401)
                     self.assertEqual(response.json(), {"code": "unauthenticated", "message": "missing-token"})
+
+    def test_verified_second_factor_requires_an_aal2_session_over_rpc(self):
+        def handler(_request):
+            return httpx.Response(200, json={"id": USER, "email": "a@example.org", "factors": [{"id": "f1", "status": "verified"}]})
+        def token(aal):
+            claims = base64.urlsafe_b64encode(json.dumps({"sub": USER, "aal": aal}).encode()).rstrip(b"=").decode()
+            return {"Authorization": f"Bearer e30.{claims}.signature"}
+        with TestClient(create_app(SETTINGS, httpx.AsyncClient(transport=httpx.MockTransport(handler)))) as client:
+            refused = self.call(client, f"{ACCOUNT}/GetMe", {}, token("aal1"))
+            web = client.post(f"{ACCOUNT}/GetMe", headers={"Content-Type": "application/grpc-web+proto", "X-Grpc-Web": "1", **token("aal1")}, content=struct.pack(">BI", 0, 0))
+            allowed = self.call(client, f"{ACCOUNT}/GetMe", {}, token("aal2"))
+        self.assertEqual(refused.status_code, 401)
+        self.assertEqual(refused.json(), {"code": "unauthenticated", "message": "mfa-required"})
+        trailer = grpc_web_frames(web.content)[-1][1].replace(b" ", b"").lower()
+        self.assertIn(b"grpc-status:16", trailer)
+        self.assertIn(b"grpc-message:mfa-required", trailer)
+        self.assertEqual(allowed.json(), {"id": USER, "email": "a@example.org"})
 
     def test_me_returns_the_verified_identity(self):
         with self.client() as client:

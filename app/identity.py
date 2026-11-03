@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -11,6 +14,10 @@ from fastapi import Depends, HTTPException, Request, status
 from .config import Settings
 
 BEARER_PREFIX = "bearer "
+# A user with a verified second factor must present a session that used it (RFC 9470 step-up).
+VERIFIED_FACTOR_STATUS = "verified"
+REQUIRED_AAL = "aal2"
+MFA_CHALLENGE = 'Bearer error="insufficient_user_authentication"'
 
 
 @dataclass(frozen=True)
@@ -30,6 +37,27 @@ def token_from_header(header: str) -> str:
 
 def bearer_token(request: Request) -> str:
     return token_from_header(request.headers.get("Authorization", ""))
+
+
+def token_claims(token: str) -> dict:
+    """The JWT payload, decoded WITHOUT checking the signature; empty when it cannot be read.
+
+    Only call this after Supabase `/auth/v1/user` has accepted the same token: that call is what validates
+    the signature and expiry, so the claims are trusted here only because Supabase already vouched for them.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return {}
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except (binascii.Error, ValueError):
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def has_verified_factor(user: dict) -> bool:
+    factors = user.get("factors")
+    return isinstance(factors, list) and any(isinstance(factor, dict) and factor.get("status") == VERIFIED_FACTOR_STATUS for factor in factors)
 
 
 async def resolve_identity(settings: Settings, client: httpx.AsyncClient, token: str) -> Identity:
@@ -54,6 +82,8 @@ async def resolve_identity(settings: Settings, client: httpx.AsyncClient, token:
     user_id = payload.get("id") if isinstance(payload, dict) else None
     if not isinstance(user_id, str) or not user_id:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "identity-error")
+    if has_verified_factor(payload) and token_claims(token).get("aal") != REQUIRED_AAL:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "mfa-required", headers={"WWW-Authenticate": MFA_CHALLENGE})
     email = payload.get("email")
     return Identity(id=user_id, email=email if isinstance(email, str) else "")
 

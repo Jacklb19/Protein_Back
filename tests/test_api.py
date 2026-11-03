@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import unittest
 
@@ -18,6 +19,12 @@ SETTINGS = Settings(allowed_origins=("http://localhost:5173",), supabase_url="ht
 def fake_supabase(handler):
     """Builds an async client whose transport answers as the Supabase user endpoint would."""
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def jwt(claims: dict) -> str:
+    """An unsigned token shaped like a Supabase JWT; the simulated Auth endpoint is what accepts it."""
+    encode = lambda part: base64.urlsafe_b64encode(json.dumps(part).encode()).rstrip(b"=").decode()  # noqa: E731
+    return f"{encode({'alg': 'HS256', 'typ': 'JWT'})}.{encode(claims)}.signature"
 
 
 def user_endpoint(request: httpx.Request) -> httpx.Response:
@@ -138,6 +145,33 @@ class ApiTests(unittest.TestCase):
         with self.client(settings=Settings()) as client:
             response = client.get("/v1/me", headers={"Authorization": "Bearer valid-token"})
         self.assertEqual(response.status_code, 503)
+
+    def test_verified_second_factor_requires_an_aal2_session(self):
+        def with_factors(factors):
+            def handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(200, json={"id": "user-1", "email": "ana@example.org", "factors": factors})
+            return handler
+
+        verified = [{"id": "f1", "factor_type": "totp", "status": "unverified"}, {"id": "f2", "factor_type": "totp", "status": "verified"}]
+        with self.client(with_factors(verified)) as client:
+            results = {name: client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
+                       for name, token in {"aal1": jwt({"sub": "user-1", "aal": "aal1"}), "missing": jwt({"sub": "user-1"}),
+                                           "opaque": "not-a-jwt", "garbled": "a.%%%.c", "aal2": jwt({"sub": "user-1", "aal": "aal2"})}.items()}
+        for name in ("aal1", "missing", "opaque", "garbled"):
+            with self.subTest(token=name):
+                self.assertEqual(results[name].status_code, 401)
+                self.assertIn("mfa-required", results[name].json()["type"])
+                self.assertIn("insufficient_user_authentication", results[name].headers["WWW-Authenticate"])
+        self.assertEqual(results["aal2"].status_code, 200)
+        self.assertEqual(results["aal2"].json(), {"id": "user-1", "email": "ana@example.org"})
+
+    def test_users_without_a_verified_factor_keep_aal1_sessions(self):
+        for factors in (None, [], [{"id": "f1", "status": "unverified"}], "unexpected"):
+            def handler(_request: httpx.Request, factors=factors) -> httpx.Response:
+                return httpx.Response(200, json={"id": "user-1", "email": "ana@example.org", "factors": factors})
+            with self.subTest(factors=factors), self.client(handler) as client:
+                for token in (jwt({"sub": "user-1", "aal": "aal1"}), "not-a-jwt"):
+                    self.assertEqual(client.get("/v1/me", headers={"Authorization": f"Bearer {token}"}).status_code, 200)
 
     def test_upstream_failures_become_gateway_errors_without_leaking_details(self):
         def timeout(request: httpx.Request) -> httpx.Response:
