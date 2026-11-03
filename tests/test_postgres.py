@@ -71,10 +71,12 @@ class PostgresSecurityTests(unittest.TestCase):
             f"insert into public.analyses(project_id,type) values ('{self.id}','descriptor');",
             f"insert into public.alignments(project_id,reference,matrix,gap_penalties) values ('{self.id}','ACD','BLOSUM62','{{}}');",
         ]
-        for operation in operations:
+        for operation in operations[:2]:
             result = self.sql(operation, self.other, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("row-level security", result.stderr)
+        # Nothing writes alignments any more (20261102000001); the privilege is gone before RLS applies.
+        self.assertIn("permission denied", self.sql(operations[2], self.other, check=False).stderr)
         transfer = self.sql(f"update public.projects set owner_id='{self.other}' where id='{self.id}';", self.owner, check=False)
         self.assertIn("row-level security", transfer.stderr)
 
@@ -129,6 +131,52 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(json.loads(self.sql(f"select public.pf_project_document('{self.id}');", self.owner).stdout)["name"], saved["name"])
         overloads = self.sql("select count(*) from pg_proc where proname='pf_save_project' and pronamespace='public'::regnamespace;").stdout.strip()
         self.assertEqual(overloads, "1")
+
+    def test_direct_table_writes_meet_the_api_bounds(self):
+        project = f"insert into public.projects(owner_id,name,active_sequence,status) values ('{self.owner}',%s,%s,%s);"
+        workspace = f"update public.analyses set results=%s, parameters=%s where project_id='{self.id}';"
+        rejected = {
+            "projects_name": [project % ("''", "'ACD'", "'draft'"), project % ("'   '", "'ACD'", "'draft'"),
+                              project % (f"'{'n' * 121}'", "'ACD'", "'draft'"), project % ("E'Tab\\tname'", "'ACD'", "'draft'")],
+            "projects_active_sequence": [project % ("'Direct'", "'ACDJ'", "'draft'"), project % ("'Direct'", "repeat('A',100001)", "'draft'")],
+            "projects_status": [project % ("'Direct'", "'ACD'", "'published'")],
+            # PostgreSQL checks constraints by name and reports the first failure, so each case breaks only one.
+            "analyses_type": [f"""insert into public.analyses(project_id,type,results,parameters) values ('{self.id}','descriptor','{self.snapshot}','{{"schemaVersion":1}}');"""],
+            "analyses_workspace": [
+                workspace % ("'{}'", """'{"schemaVersion":null}'"""),
+                workspace % ("""'{"schemaVersion":5}'""", """'{"schemaVersion":5}'"""),
+                workspace % ("""'{"schemaVersion":"1"}'""", """'{"schemaVersion":"1"}'"""),
+                workspace % ("jsonb_build_object('schemaVersion',1,'pad',repeat('x',1900000))", """'{"schemaVersion":1}'"""),
+            ],
+            "analyses_parameters": [workspace % (f"'{self.snapshot}'", """'{"schemaVersion":1,"pad":"x"}'""")],
+        }
+        for constraint, operations in rejected.items():
+            for operation in operations:
+                with self.subTest(constraint=constraint, operation=operation[:90]):
+                    result = self.sql(operation, self.owner, check=False, stdin=True)
+                    self.assertIn(f'violates check constraint "{constraint}"', result.stderr)
+        # Values inside the bounds still go through, directly and through pf_save_project.
+        self.sql(project % ("'Direct'", "'ACDUOBZX'", "'draft'"), self.owner)
+        self.sql(workspace % (f"'{self.snapshot}'", """'{"schemaVersion":1}'"""), self.owner)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','{'n' * 120}','{'A' * 100000}','{self.snapshot}','{self.version}');", self.owner, stdin=True).stdout)
+        self.assertEqual(len(saved["name"]), 120)
+        self.assertEqual(self.sql(f"select count(*) from public.alignments where project_id='{self.id}';", self.owner).stdout.strip(), "0")
+
+    def test_table_constraints_are_not_valid_idempotent_and_spare_stored_rows(self):
+        migration = (MIGRATIONS / "20261102000001_table_write_constraints.sql").read_text(encoding="utf-8")
+        # A legacy row written before the constraints existed survives a fresh application.
+        self.sql("alter table public.projects drop constraint projects_status;")
+        self.sql(f"insert into public.projects(owner_id,name,status) values ('{self.owner}','Legacy','archived');")
+        for _ in range(2):
+            self.sql(migration)
+        constraints = self.sql("select string_agg(conname||':'||convalidated, ',' order by conname) from pg_constraint "
+                               "where conrelid in ('public.projects'::regclass,'public.analyses'::regclass) and contype='c';").stdout.strip()
+        self.assertEqual(constraints, "analyses_parameters:false,analyses_type:false,analyses_workspace:false,"
+                                      "projects_active_sequence:false,projects_name:false,projects_status:false")
+        self.assertEqual(self.sql(f"select status from public.projects where owner_id='{self.owner}' and name='Legacy';").stdout.strip(), "archived")
+        changed = self.sql(f"update public.projects set name='Still legacy' where owner_id='{self.owner}' and name='Legacy';", self.owner, check=False)
+        self.assertIn('violates check constraint "projects_status"', changed.stderr)
+        self.sql(f"delete from public.projects where owner_id='{self.owner}' and name='Legacy';")
 
     def test_failed_snapshot_write_rolls_back_project_update(self):
         result = self.sql(f"begin; update public.projects set name='Must roll back' where id='{self.id}'; insert into public.analyses(project_id,type) values ('{self.id}','workspace-v1'); commit;", self.owner, check=False)
