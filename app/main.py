@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import API_DOCS_PATHS, API_PREFIX, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
 from .correlation import Correlation
+from .security_headers import SecurityHeaders
 from .identity import CurrentIdentity
 from .projects import router as projects_router
 from .reports import router as reports_router
@@ -79,6 +80,8 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     )
     # Outermost, so REST, RPC and CORS answers all carry the request id.
     app.add_middleware(Correlation)
+    # Around everything else, so REST, RPC, CORS and error answers carry the hardening headers.
+    app.add_middleware(SecurityHeaders)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unexpected_exception_handler)

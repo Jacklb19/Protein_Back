@@ -6,6 +6,7 @@ import json
 import unittest
 
 import httpx
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 from app.config import Settings, load_settings
@@ -66,6 +67,45 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(hidden, dict.fromkeys(paths, 404))
         self.assertEqual(shown, dict.fromkeys(paths, 200))
         self.assertIn("/v1/health", schema["paths"])
+
+    def test_hardening_headers_cover_rest_rpc_cors_and_errors(self):
+        app = create_app(SETTINGS, fake_supabase(user_endpoint))
+
+        @app.get("/v1/test-failure")
+        async def failure() -> None:
+            raise RuntimeError("secret detail")
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            responses = {
+                "rest": client.get("/v1/health"),
+                "problem": client.get("/v1/me"),
+                "missing": client.get("/v1/nothing-here"),
+                "unhandled": client.get("/v1/test-failure"),
+                "rpc": client.post("/proteinforge.account.v1.AccountService/GetStatus", headers={"Content-Type": "application/json"}, content=b"{}"),
+                "rpc-error": client.post("/proteinforge.account.v1.AccountService/GetMe", headers={"Content-Type": "application/json"}, content=b"{}"),
+                "preflight": client.options("/v1/health", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"}),
+            }
+        self.assertEqual({name: response.status_code for name, response in responses.items()},
+                         {"rest": 200, "problem": 401, "missing": 404, "unhandled": 500, "rpc": 200, "rpc-error": 401, "preflight": 200})
+        for name, response in responses.items():
+            with self.subTest(response=name):
+                self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertNotIn("secret detail", responses["unhandled"].text)
+
+    def test_a_route_may_choose_its_own_cache_policy(self):
+        app = create_app(SETTINGS, fake_supabase(user_endpoint))
+
+        @app.get("/v1/test-cacheable")
+        async def cacheable(response: Response) -> dict:
+            response.headers["Cache-Control"] = "private, max-age=60"
+            return {}
+
+        with TestClient(app) as client:
+            response = client.get("/v1/test-cacheable")
+        self.assertEqual(response.headers["Cache-Control"], "private, max-age=60")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
 
     def test_cors_allows_only_configured_origins(self):
         with self.client() as client:
