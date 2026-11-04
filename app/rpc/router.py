@@ -17,6 +17,7 @@ from .gen.proteinforge.reference.v1.reference_service_connect import ReferenceSe
 from .gen.proteinforge.report.v1.report_service_connect import ReportServiceASGIApplication
 from .gen.proteinforge.folding.v1.folding_service_connect import FoldingServiceASGIApplication
 from .services import AccountService, AssistantService, FoldingService, ProjectService, ReferenceService, ReportService
+from .wire import request_codecs, request_compressions
 
 # Largest request message accepted, in bytes: a project with 100,000 residues plus its snapshot fits.
 RPC_READ_MAX_BYTES = 2_000_000
@@ -24,13 +25,14 @@ RPC_READ_MAX_BYTES = 2_000_000
 
 def rpc_applications(state: Any, version: str) -> dict[str, ASGIApp]:
     """Generated ASGI applications keyed by the path prefix of their service."""
+    options: dict[str, Any] = {"read_max_bytes": RPC_READ_MAX_BYTES, "codecs": request_codecs(), "compressions": request_compressions()}
     applications = (
-        AccountServiceASGIApplication(AccountService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
-        ProjectServiceASGIApplication(ProjectService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
-        ReferenceServiceASGIApplication(ReferenceService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
-        AssistantServiceASGIApplication(AssistantService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
-        FoldingServiceASGIApplication(FoldingService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
-        ReportServiceASGIApplication(ReportService(state, version), read_max_bytes=RPC_READ_MAX_BYTES),
+        AccountServiceASGIApplication(AccountService(state, version), **options),
+        ProjectServiceASGIApplication(ProjectService(state, version), **options),
+        ReferenceServiceASGIApplication(ReferenceService(state, version), **options),
+        AssistantServiceASGIApplication(AssistantService(state, version), **options),
+        FoldingServiceASGIApplication(FoldingService(state, version), **options),
+        ReportServiceASGIApplication(ReportService(state, version), **options),
     )
     return {f"{application.path}/": application for application in applications}
 

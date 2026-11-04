@@ -26,6 +26,8 @@ DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
 # Short-lived and bounded; 0 in either setting disables the cache.
 DEFAULT_ASSISTANT_CACHE_TTL_SECONDS = 300.0
 DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES = 256
+# Interactive documentation and the OpenAPI schema, served only where API_DOCS_ENABLED opts in.
+API_DOCS_PATHS = {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -44,6 +46,7 @@ class Settings:
     assistant_cache_ttl_seconds: float = DEFAULT_ASSISTANT_CACHE_TTL_SECONDS
     assistant_cache_max_entries: int = DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES
     folding_enabled: bool = False
+    api_docs_enabled: bool = False
 
     @property
     def assistant_enabled(self) -> bool:
@@ -86,4 +89,5 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         assistant_cache_ttl_seconds=float(cache_ttl) if cache_ttl else DEFAULT_ASSISTANT_CACHE_TTL_SECONDS,
         assistant_cache_max_entries=int(cache_entries) if cache_entries else DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES,
         folding_enabled=env.get("FOLDING_ENABLED", "").strip() == "enabled",
+        api_docs_enabled=env.get("API_DOCS_ENABLED", "").strip() == "enabled",
     )

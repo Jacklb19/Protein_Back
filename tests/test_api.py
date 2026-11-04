@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import unittest
 
 import httpx
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 from app.config import Settings, load_settings
@@ -17,6 +19,12 @@ SETTINGS = Settings(allowed_origins=("http://localhost:5173",), supabase_url="ht
 def fake_supabase(handler):
     """Builds an async client whose transport answers as the Supabase user endpoint would."""
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def jwt(claims: dict) -> str:
+    """An unsigned token shaped like a Supabase JWT; the simulated Auth endpoint is what accepts it."""
+    encode = lambda part: base64.urlsafe_b64encode(json.dumps(part).encode()).rstrip(b"=").decode()  # noqa: E731
+    return f"{encode({'alg': 'HS256', 'typ': 'JWT'})}.{encode(claims)}.signature"
 
 
 def user_endpoint(request: httpx.Request) -> httpx.Response:
@@ -39,6 +47,11 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.allowed_origins, ("http://localhost:5173",))
         self.assertFalse(settings.identity_enabled)
 
+    def test_api_docs_are_opt_in(self):
+        self.assertFalse(load_settings({}).api_docs_enabled)
+        self.assertFalse(load_settings({"API_DOCS_ENABLED": "true"}).api_docs_enabled)
+        self.assertTrue(load_settings({"API_DOCS_ENABLED": "enabled"}).api_docs_enabled)
+
 
 class ApiTests(unittest.TestCase):
     def client(self, handler=user_endpoint, settings: Settings = SETTINGS) -> TestClient:
@@ -50,6 +63,56 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok", "version": "0.1.0", "identity": True})
         self.assertTrue(response.headers["X-Request-Id"])
+
+    def test_docs_and_schema_are_served_only_when_enabled(self):
+        paths = ("/docs", "/redoc", "/openapi.json")
+        with self.client() as client:
+            hidden = {path: client.get(path).status_code for path in paths}
+        with self.client(settings=Settings(api_docs_enabled=True)) as client:
+            shown = {path: client.get(path).status_code for path in paths}
+            schema = client.get("/openapi.json").json()
+        self.assertEqual(hidden, dict.fromkeys(paths, 404))
+        self.assertEqual(shown, dict.fromkeys(paths, 200))
+        self.assertIn("/v1/health", schema["paths"])
+
+    def test_hardening_headers_cover_rest_rpc_cors_and_errors(self):
+        app = create_app(SETTINGS, fake_supabase(user_endpoint))
+
+        @app.get("/v1/test-failure")
+        async def failure() -> None:
+            raise RuntimeError("secret detail")
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            responses = {
+                "rest": client.get("/v1/health"),
+                "problem": client.get("/v1/me"),
+                "missing": client.get("/v1/nothing-here"),
+                "unhandled": client.get("/v1/test-failure"),
+                "rpc": client.post("/proteinforge.account.v1.AccountService/GetStatus", headers={"Content-Type": "application/json"}, content=b"{}"),
+                "rpc-error": client.post("/proteinforge.account.v1.AccountService/GetMe", headers={"Content-Type": "application/json"}, content=b"{}"),
+                "preflight": client.options("/v1/health", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"}),
+            }
+        self.assertEqual({name: response.status_code for name, response in responses.items()},
+                         {"rest": 200, "problem": 401, "missing": 404, "unhandled": 500, "rpc": 200, "rpc-error": 401, "preflight": 200})
+        for name, response in responses.items():
+            with self.subTest(response=name):
+                self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertNotIn("secret detail", responses["unhandled"].text)
+
+    def test_a_route_may_choose_its_own_cache_policy(self):
+        app = create_app(SETTINGS, fake_supabase(user_endpoint))
+
+        @app.get("/v1/test-cacheable")
+        async def cacheable(response: Response) -> dict:
+            response.headers["Cache-Control"] = "private, max-age=60"
+            return {}
+
+        with TestClient(app) as client:
+            response = client.get("/v1/test-cacheable")
+        self.assertEqual(response.headers["Cache-Control"], "private, max-age=60")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
 
     def test_cors_allows_only_configured_origins(self):
         with self.client() as client:
@@ -82,6 +145,33 @@ class ApiTests(unittest.TestCase):
         with self.client(settings=Settings()) as client:
             response = client.get("/v1/me", headers={"Authorization": "Bearer valid-token"})
         self.assertEqual(response.status_code, 503)
+
+    def test_verified_second_factor_requires_an_aal2_session(self):
+        def with_factors(factors):
+            def handler(_request: httpx.Request) -> httpx.Response:
+                return httpx.Response(200, json={"id": "user-1", "email": "ana@example.org", "factors": factors})
+            return handler
+
+        verified = [{"id": "f1", "factor_type": "totp", "status": "unverified"}, {"id": "f2", "factor_type": "totp", "status": "verified"}]
+        with self.client(with_factors(verified)) as client:
+            results = {name: client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
+                       for name, token in {"aal1": jwt({"sub": "user-1", "aal": "aal1"}), "missing": jwt({"sub": "user-1"}),
+                                           "opaque": "not-a-jwt", "garbled": "a.%%%.c", "aal2": jwt({"sub": "user-1", "aal": "aal2"})}.items()}
+        for name in ("aal1", "missing", "opaque", "garbled"):
+            with self.subTest(token=name):
+                self.assertEqual(results[name].status_code, 401)
+                self.assertIn("mfa-required", results[name].json()["type"])
+                self.assertIn("insufficient_user_authentication", results[name].headers["WWW-Authenticate"])
+        self.assertEqual(results["aal2"].status_code, 200)
+        self.assertEqual(results["aal2"].json(), {"id": "user-1", "email": "ana@example.org"})
+
+    def test_users_without_a_verified_factor_keep_aal1_sessions(self):
+        for factors in (None, [], [{"id": "f1", "status": "unverified"}], "unexpected"):
+            def handler(_request: httpx.Request, factors=factors) -> httpx.Response:
+                return httpx.Response(200, json={"id": "user-1", "email": "ana@example.org", "factors": factors})
+            with self.subTest(factors=factors), self.client(handler) as client:
+                for token in (jwt({"sub": "user-1", "aal": "aal1"}), "not-a-jwt"):
+                    self.assertEqual(client.get("/v1/me", headers={"Authorization": f"Bearer {token}"}).status_code, 200)
 
     def test_upstream_failures_become_gateway_errors_without_leaking_details(self):
         def timeout(request: httpx.Request) -> httpx.Response:

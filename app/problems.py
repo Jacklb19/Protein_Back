@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import REQUEST_ID_HEADER
+from .security_headers import apply_security_headers
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 PROBLEM_TYPE_BASE = "https://proteinforge.invalid/problems/"
@@ -40,7 +41,10 @@ def problem(request: Request, status: int, detail: str, code: str) -> JSONRespon
         "requestId": request_id,
     }
     headers = {REQUEST_ID_HEADER: request_id} if request_id else {}
-    return JSONResponse(body, status_code=status, media_type=PROBLEM_CONTENT_TYPE, headers=headers)
+    response = JSONResponse(body, status_code=status, media_type=PROBLEM_CONTENT_TYPE, headers=headers)
+    # Unhandled exceptions are answered outside the middlewares, so the hardening headers are added here too.
+    apply_security_headers(response.headers)
+    return response
 
 
 async def http_exception_handler(request: Request, exception: StarletteHTTPException) -> JSONResponse:

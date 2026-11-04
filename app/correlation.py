@@ -14,7 +14,6 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from .config import REQUEST_ID_HEADER
 
 MAX_REQUEST_ID_LENGTH = 64
-NO_STORE = "no-store"
 
 
 def request_id_from(scope: Scope) -> str:
@@ -23,7 +22,7 @@ def request_id_from(scope: Scope) -> str:
 
 
 class Correlation:
-    """Gives every request an id (echoed back) and marks every response as not cacheable."""
+    """Gives every request an id and echoes it back; `security_headers.py` marks responses as not cacheable."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -37,9 +36,7 @@ class Correlation:
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                headers[REQUEST_ID_HEADER] = request_id
-                headers["Cache-Control"] = NO_STORE
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
