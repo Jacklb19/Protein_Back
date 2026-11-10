@@ -16,7 +16,7 @@ from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DE
 from protobuf import DescService
 
 from . import project_service_pb
-from .project_service_pb import CreateProjectRequest, CreateProjectResponse, DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse, ListProjectsRequest, ListProjectsResponse, UpdateProjectRequest, UpdateProjectResponse
+from .project_service_pb import CreateProjectRequest, CreateProjectResponse, DeleteProjectRequest, DeleteProjectResponse, GetProjectRequest, GetProjectResponse, ListProjectVersionsRequest, ListProjectVersionsResponse, ListProjectsRequest, ListProjectsResponse, RestoreProjectVersionRequest, RestoreProjectVersionResponse, UpdateProjectRequest, UpdateProjectResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterable, Mapping
@@ -69,6 +69,20 @@ class ProjectService(Protocol):
     async def delete_project(self, request: DeleteProjectRequest, ctx: RequestContext[DeleteProjectRequest, DeleteProjectResponse], /) -> DeleteProjectResponse:
         """
         Deletes the project and its stored results.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    async def list_project_versions(self, request: ListProjectVersionsRequest, ctx: RequestContext[ListProjectVersionsRequest, ListProjectVersionsResponse], /) -> ListProjectVersionsResponse:
+        """
+        Earlier contents of a project, newest first, as compact previews. Every update that changes
+        the sequence or the workspace keeps the content it replaces; a rename alone keeps none.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    async def restore_project_version(self, request: RestoreProjectVersionRequest, ctx: RequestContext[RestoreProjectVersionRequest, RestoreProjectVersionResponse], /) -> RestoreProjectVersionResponse:
+        """
+        Puts a version back as the content, keeping the name; the current content becomes a version
+        first, so a restore can be undone. NOT_FOUND names "project-version-not-found".
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -139,6 +153,26 @@ class ProjectServiceASGIApplication(ConnectASGIApplication[ProjectService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.delete_project,
+                ),
+                "/proteinforge.project.v1.ProjectService/ListProjectVersions": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ListProjectVersions",
+                        service_name="proteinforge.project.v1.ProjectService",
+                        input=ListProjectVersionsRequest,
+                        output=ListProjectVersionsResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=svc.list_project_versions,
+                ),
+                "/proteinforge.project.v1.ProjectService/RestoreProjectVersion": Endpoint.unary(
+                    method=MethodInfo(
+                        name="RestoreProjectVersion",
+                        service_name="proteinforge.project.v1.ProjectService",
+                        input=RestoreProjectVersionRequest,
+                        output=RestoreProjectVersionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.restore_project_version,
                 ),
             },
             interceptors=interceptors,
@@ -287,6 +321,56 @@ class ProjectServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def list_project_versions(
+        self,
+        request: ListProjectVersionsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> ListProjectVersionsResponse:
+        """
+        Earlier contents of a project, newest first, as compact previews. Every update that changes
+        the sequence or the workspace keeps the content it replaces; a rename alone keeps none.
+        """
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListProjectVersions",
+                service_name="proteinforge.project.v1.ProjectService",
+                input=ListProjectVersionsRequest,
+                output=ListProjectVersionsResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+
+    async def restore_project_version(
+        self,
+        request: RestoreProjectVersionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+    ) -> RestoreProjectVersionResponse:
+        """
+        Puts a version back as the content, keeping the name; the current content becomes a version
+        first, so a restore can be undone. NOT_FOUND names "project-version-not-found".
+        """
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="RestoreProjectVersion",
+                service_name="proteinforge.project.v1.ProjectService",
+                input=RestoreProjectVersionRequest,
+                output=RestoreProjectVersionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
 class ProjectServiceSync(Protocol):
     """
     Projects owned by the person behind the bearer token. Supabase receives the user's own
@@ -329,6 +413,20 @@ class ProjectServiceSync(Protocol):
     def delete_project(self, request: DeleteProjectRequest, ctx: RequestContext[DeleteProjectRequest, DeleteProjectResponse], /) -> DeleteProjectResponse:
         """
         Deletes the project and its stored results.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    def list_project_versions(self, request: ListProjectVersionsRequest, ctx: RequestContext[ListProjectVersionsRequest, ListProjectVersionsResponse], /) -> ListProjectVersionsResponse:
+        """
+        Earlier contents of a project, newest first, as compact previews. Every update that changes
+        the sequence or the workspace keeps the content it replaces; a rename alone keeps none.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    def restore_project_version(self, request: RestoreProjectVersionRequest, ctx: RequestContext[RestoreProjectVersionRequest, RestoreProjectVersionResponse], /) -> RestoreProjectVersionResponse:
+        """
+        Puts a version back as the content, keeping the name; the current content becomes a version
+        first, so a restore can be undone. NOT_FOUND names "project-version-not-found".
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -397,6 +495,26 @@ class ProjectServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.delete_project,
+                ),
+                "/proteinforge.project.v1.ProjectService/ListProjectVersions": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ListProjectVersions",
+                        service_name="proteinforge.project.v1.ProjectService",
+                        input=ListProjectVersionsRequest,
+                        output=ListProjectVersionsResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=service.list_project_versions,
+                ),
+                "/proteinforge.project.v1.ProjectService/RestoreProjectVersion": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="RestoreProjectVersion",
+                        service_name="proteinforge.project.v1.ProjectService",
+                        input=RestoreProjectVersionRequest,
+                        output=RestoreProjectVersionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.restore_project_version,
                 ),
             },
             interceptors=interceptors,
@@ -535,6 +653,54 @@ class ProjectServiceClientSync(ConnectClientSync):
                 service_name="proteinforge.project.v1.ProjectService",
                 input=DeleteProjectRequest,
                 output=DeleteProjectResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+    def list_project_versions(
+        self,
+        request: ListProjectVersionsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> ListProjectVersionsResponse:
+        """
+        Earlier contents of a project, newest first, as compact previews. Every update that changes
+        the sequence or the workspace keeps the content it replaces; a rename alone keeps none.
+        """
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListProjectVersions",
+                service_name="proteinforge.project.v1.ProjectService",
+                input=ListProjectVersionsRequest,
+                output=ListProjectVersionsResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+    def restore_project_version(
+        self,
+        request: RestoreProjectVersionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+    ) -> RestoreProjectVersionResponse:
+        """
+        Puts a version back as the content, keeping the name; the current content becomes a version
+        first, so a restore can be undone. NOT_FOUND names "project-version-not-found".
+        """
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="RestoreProjectVersion",
+                service_name="proteinforge.project.v1.ProjectService",
+                input=RestoreProjectVersionRequest,
+                output=RestoreProjectVersionResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

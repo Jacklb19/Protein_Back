@@ -17,7 +17,10 @@ from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
 from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
 from .laboratory import LaboratorySnapshot, laboratory_document
-from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
+from .project_config import (
+    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT,
+    PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +270,29 @@ class ProjectList(Contract):
     next_offset: int | None
 
 
+class ProjectVersion(Contract):
+    """An earlier content of a project: when it was saved and a compact preview, never the snapshot."""
+
+    id: UUID
+    saved_at: str
+    preview: ProjectPreview | None = None
+
+
+class ProjectVersionList(Contract):
+    items: list[ProjectVersion] = Field(max_length=PROJECT_VERSION_LIMIT)
+
+
+class VersionRestore(Contract):
+    expected_updated_at: datetime
+
+    @field_validator("expected_updated_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Timezone required")
+        return value
+
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
@@ -351,6 +377,26 @@ async def remove_project(context: ServiceContext, token: str, project_id: UUID, 
     context.live_hub.notify(owner_id)
 
 
+async def fetch_versions(context: ServiceContext, token: str, project_id: UUID) -> ProjectVersionList:
+    """RLS limits the rows to the caller's; another owner's project simply has no versions."""
+    rows = await data_request(context, token, "POST", PROJECT_VERSIONS_RPC, json={"p_id": str(project_id), "p_prefix_length": PROJECT_PREVIEW_RESIDUES})
+    try:
+        return ProjectVersionList.model_validate({"items": rows})
+    except ValidationError as error:
+        raise HTTPException(502, "projects-invalid-response") from error
+
+
+async def restore_version(context: ServiceContext, token: str, project_id: UUID, version_id: UUID, expected: datetime, owner_id: str | None = None) -> Project:
+    """Puts a version back in one transaction; what was current becomes a version, so it can be undone."""
+    if expected.tzinfo is None:
+        raise HTTPException(422, "validation")
+    project = document(await data_request(context, token, "POST", PROJECT_RESTORE_RPC, messages={VERSION_NOT_FOUND_MESSAGE: (404, "project-version-not-found")}, json={
+        "p_project_id": str(project_id), "p_version_id": str(version_id), "p_expected_updated_at": expected.isoformat(),
+    }))
+    context.live_hub.notify(owner_id)
+    return project
+
+
 @router.get("", response_model=ProjectList)
 async def list_projects(request: Request, identity: CurrentIdentity, token: Token, limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE), offset: int = Query(0, ge=0, le=MAX_OFFSET), query: str = Query("", max_length=PROJECT_NAME_LENGTH), order: Literal["recent", "name"] = DEFAULT_PROJECT_ORDER):
     return await fetch_projects(context_of(request), identity.id, token, limit, offset, query.strip(), order)
@@ -376,6 +422,16 @@ async def save_project(context: ServiceContext, token: str, payload: ProjectWrit
     project = document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
     context.live_hub.notify(owner_id)
     return project
+
+
+@router.get("/{project_id}/versions", response_model=ProjectVersionList)
+async def list_versions(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token):
+    return await fetch_versions(context_of(request), token, project_id)
+
+
+@router.post("/{project_id}/versions/{version_id}/restore", response_model=Project)
+async def restore_project_version(project_id: UUID, version_id: UUID, payload: VersionRestore, request: Request, identity: CurrentIdentity, token: Token):
+    return await restore_version(context_of(request), token, project_id, version_id, payload.expected_updated_at, identity.id)
 
 
 @router.post("", response_model=Project, status_code=201)

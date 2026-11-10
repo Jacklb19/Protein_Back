@@ -17,7 +17,7 @@ from ..config import Settings
 from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectCreate, ProjectUpdate
-from ..projects import fetch_project, fetch_projects, remove_project, save_project
+from ..projects import fetch_project, fetch_projects, fetch_versions, remove_project, restore_version, save_project
 from ..project_config import PROJECT_NAME_LENGTH
 from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
 from ..reports import ReportUploadRequest, complete_report, download_report, fetch_reports, remove_report, reserve_report
@@ -153,6 +153,20 @@ class ProjectService(StateBound):
         identity, token = await self.identity(ctx)
         await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"), identity.id)
         return project_pb.DeleteProjectResponse()
+
+
+    @rpc_errors
+    async def list_project_versions(self, request: project_pb.ListProjectVersionsRequest, ctx: RequestContext) -> project_pb.ListProjectVersionsResponse:
+        _identity, token = await self.identity(ctx)
+        listing = await fetch_versions(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.ListProjectVersionsResponse(versions=[convert.version_message(item) for item in listing.items])
+
+    @rpc_errors
+    async def restore_project_version(self, request: project_pb.RestoreProjectVersionRequest, ctx: RequestContext) -> project_pb.RestoreProjectVersionResponse:
+        identity, token = await self.identity(ctx)
+        expected = convert.moment(request.expected_update_time, "expected_update_time")
+        project = await restore_version(self.context, token, project_id(request.project_id, "project_id"), project_id(request.version_id, "version_id"), expected, identity.id)
+        return project_pb.RestoreProjectVersionResponse(project=convert.project_message(project))
 
 
 class ReportService(StateBound):

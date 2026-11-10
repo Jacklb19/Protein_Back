@@ -724,6 +724,178 @@ class DeleteProjectResponse(Message[_DeleteProjectResponseFields]):
         ) -> None:
             pass
 
+_ProjectVersionFields: TypeAlias = Literal["id", "save_time", "preview"]
+
+class ProjectVersion(Message[_ProjectVersionFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.ProjectVersion
+    ```
+
+    Attributes:
+        id:
+            UUID.
+
+            ```proto
+            string id = 1;
+            ```
+        save_time:
+            When this content was saved.
+
+            ```proto
+            optional google.protobuf.Timestamp save_time = 2;
+            ```
+        preview:
+            ```proto
+            optional proteinforge.project.v1.ProjectPreview preview = 3;
+            ```
+    """
+
+    __slots__ = ("id", "save_time", "preview")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            id: str = "",
+            save_time: Timestamp | None = None,
+            preview: ProjectPreview | None = None,
+        ) -> None:
+            pass
+
+        id: str
+        save_time: Timestamp | None
+        preview: ProjectPreview | None
+
+_ListProjectVersionsRequestFields: TypeAlias = Literal["project_id"]
+
+class ListProjectVersionsRequest(Message[_ListProjectVersionsRequestFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.ListProjectVersionsRequest
+    ```
+
+    Attributes:
+        project_id:
+            ```proto
+            string project_id = 1;
+            ```
+    """
+
+    __slots__ = ("project_id",)
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            project_id: str = "",
+        ) -> None:
+            pass
+
+        project_id: str
+
+_ListProjectVersionsResponseFields: TypeAlias = Literal["versions"]
+
+class ListProjectVersionsResponse(Message[_ListProjectVersionsResponseFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.ListProjectVersionsResponse
+    ```
+
+    Attributes:
+        versions:
+            At most five, newest first.
+
+            ```proto
+            repeated proteinforge.project.v1.ProjectVersion versions = 1;
+            ```
+    """
+
+    __slots__ = ("versions",)
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            versions: list[ProjectVersion] | None = None,
+        ) -> None:
+            pass
+
+        versions: list[ProjectVersion]
+
+_RestoreProjectVersionRequestFields: TypeAlias = Literal["project_id", "version_id", "expected_update_time"]
+
+class RestoreProjectVersionRequest(Message[_RestoreProjectVersionRequestFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.RestoreProjectVersionRequest
+    ```
+
+    Attributes:
+        project_id:
+            ```proto
+            string project_id = 1;
+            ```
+        version_id:
+            ```proto
+            string version_id = 2;
+            ```
+        expected_update_time:
+            The update_time the client last read; ABORTED when it no longer matches.
+
+            ```proto
+            optional google.protobuf.Timestamp expected_update_time = 3;
+            ```
+    """
+
+    __slots__ = ("project_id", "version_id", "expected_update_time")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            project_id: str = "",
+            version_id: str = "",
+            expected_update_time: Timestamp | None = None,
+        ) -> None:
+            pass
+
+        project_id: str
+        version_id: str
+        expected_update_time: Timestamp | None
+
+_RestoreProjectVersionResponseFields: TypeAlias = Literal["project"]
+
+class RestoreProjectVersionResponse(Message[_RestoreProjectVersionResponseFields]):
+    """
+    ```proto
+    message proteinforge.project.v1.RestoreProjectVersionResponse
+    ```
+
+    Attributes:
+        project:
+            ```proto
+            optional proteinforge.project.v1.Project project = 1;
+            ```
+    """
+
+    __slots__ = ("project",)
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            project: Project | None = None,
+        ) -> None:
+            pass
+
+        project: Project | None
+
 class ProjectStatus(Enum):
     """
     ```proto
@@ -775,7 +947,7 @@ class ProjectOrder(Enum):
 
 
 _DESC = file_desc(
-    b'\n-proteinforge/project/v1/project_service.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\'proteinforge/project/v1/workspace.proto"\xb1\x02\n\x0eProjectSummary\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12>\n\x06status\x18\x03 \x01(\x0e2&.proteinforge.project.v1.ProjectStatusR\x06status\x12;\n\x0bcreate_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\ncreateTime\x12;\n\x0bupdate_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\nupdateTime\x12A\n\x07preview\x18\x06 \x01(\x0b2\'.proteinforge.project.v1.ProjectPreviewR\x07preview"\xe1\x03\n\x0eProjectPreview\x12\'\n\x0fsequence_length\x18\x01 \x01(\x05R\x0esequenceLength\x12\'\n\x0fsequence_prefix\x18\x02 \x01(\tR\x0esequencePrefix\x12K\n\x0bdescriptors\x18\x03 \x01(\x0b2).proteinforge.project.v1.DescriptorResultR\x0bdescriptors\x12N\n\talignment\x18\x04 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentPreviewR\talignment\x12E\n\x06source\x18\x05 \x01(\x0b2-.proteinforge.project.v1.ProjectSourcePreviewR\x06source\x12\x1a\n\x08excluded\x18\x06 \x01(\x05R\x08excluded\x12%\n\x0ehas_laboratory\x18\x07 \x01(\x08R\rhasLaboratory\x12/\n\x13laboratory_variants\x18\x08 \x01(\x05R\x12laboratoryVariants\x12%\n\x0egenerator_runs\x18\t \x01(\x05R\rgeneratorRuns"\xf4\x02\n\x17ProjectAlignmentPreview\x12!\n\x0cfirst_length\x18\x01 \x01(\x05R\x0bfirstLength\x12#\n\rsecond_length\x18\x02 \x01(\x05R\x0csecondLength\x12!\n\x0cfirst_prefix\x18\x03 \x01(\tR\x0bfirstPrefix\x12#\n\rsecond_prefix\x18\x04 \x01(\tR\x0csecondPrefix\x12C\n\x06matrix\x18\x05 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x06 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12H\n\x06result\x18\x07 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentMetricsR\x06result"w\n\x17ProjectAlignmentMetrics\x12\x1e\n\nidentities\x18\x01 \x01(\x05R\nidentities\x12"\n\x0csimilarities\x18\x02 \x01(\x05R\x0csimilarities\x12\x18\n\x07columns\x18\x03 \x01(\x05R\x07columns"s\n\x14ProjectSourcePreview\x12=\n\x06origin\x18\x01 \x01(\x0e2%.proteinforge.project.v1.SourceOriginR\x06origin\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession"\xb7\x01\n\x07Project\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x07summary\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"\xa4\x01\n\x13ListProjectsRequest\x12\x1b\n\tpage_size\x18\x01 \x01(\x05R\x08pageSize\x12\x1d\n\npage_token\x18\x02 \x01(\tR\tpageToken\x12\x14\n\x05query\x18\x03 \x01(\tR\x05query\x12;\n\x05order\x18\x04 \x01(\x0e2%.proteinforge.project.v1.ProjectOrderR\x05order"\xa8\x01\n\x14ListProjectsResponse\x12C\n\x08projects\x18\x01 \x03(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x08projects\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12#\n\rquery_applied\x18\x03 \x01(\x08R\x0cqueryApplied"#\n\x11GetProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id"P\n\x12GetProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xb4\x01\n\x14CreateProjectRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace\x12\x1d\n\nrequest_id\x18\x04 \x01(\tR\trequestId"S\n\x15CreateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xf3\x01\n\x14UpdateProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x04 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x05 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15UpdateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"t\n\x14DeleteProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime"\x17\n\x15DeleteProjectResponse*I\n\rProjectStatus\x12\x1e\n\x1aPROJECT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_STATUS_DRAFT\x10\x01*_\n\x0cProjectOrder\x12\x1d\n\x19PROJECT_ORDER_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_ORDER_RECENT\x10\x01\x12\x16\n\x12PROJECT_ORDER_NAME\x10\x022\xbe\x04\n\x0eProjectService\x12p\n\x0cListProjects\x12,.proteinforge.project.v1.ListProjectsRequest\x1a-.proteinforge.project.v1.ListProjectsResponse"\x03\x90\x02\x01\x12j\n\nGetProject\x12*.proteinforge.project.v1.GetProjectRequest\x1a+.proteinforge.project.v1.GetProjectResponse"\x03\x90\x02\x01\x12n\n\rCreateProject\x12-.proteinforge.project.v1.CreateProjectRequest\x1a..proteinforge.project.v1.CreateProjectResponse\x12n\n\rUpdateProject\x12-.proteinforge.project.v1.UpdateProjectRequest\x1a..proteinforge.project.v1.UpdateProjectResponse\x12n\n\rDeleteProject\x12-.proteinforge.project.v1.DeleteProjectRequest\x1a..proteinforge.project.v1.DeleteProjectResponseb\x06proto3',
+    b'\n-proteinforge/project/v1/project_service.proto\x12\x17proteinforge.project.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\'proteinforge/project/v1/workspace.proto"\xb1\x02\n\x0eProjectSummary\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12>\n\x06status\x18\x03 \x01(\x0e2&.proteinforge.project.v1.ProjectStatusR\x06status\x12;\n\x0bcreate_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\ncreateTime\x12;\n\x0bupdate_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\nupdateTime\x12A\n\x07preview\x18\x06 \x01(\x0b2\'.proteinforge.project.v1.ProjectPreviewR\x07preview"\xe1\x03\n\x0eProjectPreview\x12\'\n\x0fsequence_length\x18\x01 \x01(\x05R\x0esequenceLength\x12\'\n\x0fsequence_prefix\x18\x02 \x01(\tR\x0esequencePrefix\x12K\n\x0bdescriptors\x18\x03 \x01(\x0b2).proteinforge.project.v1.DescriptorResultR\x0bdescriptors\x12N\n\talignment\x18\x04 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentPreviewR\talignment\x12E\n\x06source\x18\x05 \x01(\x0b2-.proteinforge.project.v1.ProjectSourcePreviewR\x06source\x12\x1a\n\x08excluded\x18\x06 \x01(\x05R\x08excluded\x12%\n\x0ehas_laboratory\x18\x07 \x01(\x08R\rhasLaboratory\x12/\n\x13laboratory_variants\x18\x08 \x01(\x05R\x12laboratoryVariants\x12%\n\x0egenerator_runs\x18\t \x01(\x05R\rgeneratorRuns"\xf4\x02\n\x17ProjectAlignmentPreview\x12!\n\x0cfirst_length\x18\x01 \x01(\x05R\x0bfirstLength\x12#\n\rsecond_length\x18\x02 \x01(\x05R\x0csecondLength\x12!\n\x0cfirst_prefix\x18\x03 \x01(\tR\x0bfirstPrefix\x12#\n\rsecond_prefix\x18\x04 \x01(\tR\x0csecondPrefix\x12C\n\x06matrix\x18\x05 \x01(\x0e2+.proteinforge.project.v1.SubstitutionMatrixR\x06matrix\x12:\n\x04mode\x18\x06 \x01(\x0e2&.proteinforge.project.v1.AlignmentModeR\x04mode\x12H\n\x06result\x18\x07 \x01(\x0b20.proteinforge.project.v1.ProjectAlignmentMetricsR\x06result"w\n\x17ProjectAlignmentMetrics\x12\x1e\n\nidentities\x18\x01 \x01(\x05R\nidentities\x12"\n\x0csimilarities\x18\x02 \x01(\x05R\x0csimilarities\x12\x18\n\x07columns\x18\x03 \x01(\x05R\x07columns"s\n\x14ProjectSourcePreview\x12=\n\x06origin\x18\x01 \x01(\x0e2%.proteinforge.project.v1.SourceOriginR\x06origin\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession"\xb7\x01\n\x07Project\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x07summary\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"\xa4\x01\n\x13ListProjectsRequest\x12\x1b\n\tpage_size\x18\x01 \x01(\x05R\x08pageSize\x12\x1d\n\npage_token\x18\x02 \x01(\tR\tpageToken\x12\x14\n\x05query\x18\x03 \x01(\tR\x05query\x12;\n\x05order\x18\x04 \x01(\x0e2%.proteinforge.project.v1.ProjectOrderR\x05order"\xa8\x01\n\x14ListProjectsResponse\x12C\n\x08projects\x18\x01 \x03(\x0b2\'.proteinforge.project.v1.ProjectSummaryR\x08projects\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12#\n\rquery_applied\x18\x03 \x01(\x08R\x0cqueryApplied"#\n\x11GetProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id"P\n\x12GetProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xb4\x01\n\x14CreateProjectRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x02 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x03 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace\x12\x1d\n\nrequest_id\x18\x04 \x01(\tR\trequestId"S\n\x15CreateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"\xf3\x01\n\x14UpdateProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\'\n\x0factive_sequence\x18\x04 \x01(\tR\x0eactiveSequence\x12@\n\tworkspace\x18\x05 \x01(\x0b2".proteinforge.project.v1.WorkspaceR\tworkspace"S\n\x15UpdateProjectResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project"t\n\x14DeleteProjectRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12L\n\x14expected_update_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime"\x17\n\x15DeleteProjectResponse"\x9c\x01\n\x0eProjectVersion\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x127\n\tsave_time\x18\x02 \x01(\x0b2\x1a.google.protobuf.TimestampR\x08saveTime\x12A\n\x07preview\x18\x03 \x01(\x0b2\'.proteinforge.project.v1.ProjectPreviewR\x07preview";\n\x1aListProjectVersionsRequest\x12\x1d\n\nproject_id\x18\x01 \x01(\tR\tprojectId"b\n\x1bListProjectVersionsResponse\x12C\n\x08versions\x18\x01 \x03(\x0b2\'.proteinforge.project.v1.ProjectVersionR\x08versions"\xaa\x01\n\x1cRestoreProjectVersionRequest\x12\x1d\n\nproject_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n\nversion_id\x18\x02 \x01(\tR\tversionId\x12L\n\x14expected_update_time\x18\x03 \x01(\x0b2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime"[\n\x1dRestoreProjectVersionResponse\x12:\n\x07project\x18\x01 \x01(\x0b2 .proteinforge.project.v1.ProjectR\x07project*I\n\rProjectStatus\x12\x1e\n\x1aPROJECT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_STATUS_DRAFT\x10\x01*_\n\x0cProjectOrder\x12\x1d\n\x19PROJECT_ORDER_UNSPECIFIED\x10\x00\x12\x18\n\x14PROJECT_ORDER_RECENT\x10\x01\x12\x16\n\x12PROJECT_ORDER_NAME\x10\x022\xcf\x06\n\x0eProjectService\x12p\n\x0cListProjects\x12,.proteinforge.project.v1.ListProjectsRequest\x1a-.proteinforge.project.v1.ListProjectsResponse"\x03\x90\x02\x01\x12j\n\nGetProject\x12*.proteinforge.project.v1.GetProjectRequest\x1a+.proteinforge.project.v1.GetProjectResponse"\x03\x90\x02\x01\x12n\n\rCreateProject\x12-.proteinforge.project.v1.CreateProjectRequest\x1a..proteinforge.project.v1.CreateProjectResponse\x12n\n\rUpdateProject\x12-.proteinforge.project.v1.UpdateProjectRequest\x1a..proteinforge.project.v1.UpdateProjectResponse\x12n\n\rDeleteProject\x12-.proteinforge.project.v1.DeleteProjectRequest\x1a..proteinforge.project.v1.DeleteProjectResponse\x12\x85\x01\n\x13ListProjectVersions\x123.proteinforge.project.v1.ListProjectVersionsRequest\x1a4.proteinforge.project.v1.ListProjectVersionsResponse"\x03\x90\x02\x01\x12\x86\x01\n\x15RestoreProjectVersion\x125.proteinforge.project.v1.RestoreProjectVersionRequest\x1a6.proteinforge.project.v1.RestoreProjectVersionResponseb\x06proto3',
     [
         timestamp_pb.desc(),
         workspace_pb.desc(),
@@ -797,6 +969,11 @@ _DESC = file_desc(
         "UpdateProjectResponse": UpdateProjectResponse,
         "DeleteProjectRequest": DeleteProjectRequest,
         "DeleteProjectResponse": DeleteProjectResponse,
+        "ProjectVersion": ProjectVersion,
+        "ListProjectVersionsRequest": ListProjectVersionsRequest,
+        "ListProjectVersionsResponse": ListProjectVersionsResponse,
+        "RestoreProjectVersionRequest": RestoreProjectVersionRequest,
+        "RestoreProjectVersionResponse": RestoreProjectVersionResponse,
         "ProjectStatus": ProjectStatus,
         "ProjectOrder": ProjectOrder,
     },

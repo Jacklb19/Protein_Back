@@ -20,6 +20,7 @@ from ..assistant import Interpretation as InterpretationModel
 from ..projects import AlignmentSnapshot as AlignmentModel
 from ..projects import Project as ProjectModel
 from ..projects import ProjectSummary as SummaryModel
+from ..projects import ProjectVersion as VersionModel
 from ..projects import ProjectPreview, ProjectAlignmentPreview, ProjectAlignmentMetrics, ProjectSourcePreview
 from ..project_config import DEFAULT_PROJECT_ORDER, PROJECT_PREVIEW_RESIDUES
 from ..project_config import PROJECT_ORDERS
@@ -294,6 +295,10 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
             result=project_pb.ProjectAlignmentMetrics(identities=result.identities, similarities=result.similarities, columns=result.columns) if result else None,
         ) if alignment else None,
     )
+
+
+def version_message(version: VersionModel) -> project_pb.ProjectVersion:
+    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview))
 
 
 def report_kind(value: report_pb.ReportKind) -> str:
