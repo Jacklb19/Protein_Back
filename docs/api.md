@@ -1,5 +1,17 @@
 # Contratos de API
 
+## Enlaces de solo lectura — implementación local del 11 nov 2026
+
+Migración `20261111000000_project_shares.sql` (**solo local, sin aplicar en Supabase**). Un enlace por proyecto; caduca a los 7 días (`PROJECT_SHARE_LIFETIME_DAYS`, repetido en la migración y comprobado por prueba).
+
+- La API genera el token (32 bytes aleatorios, 43 caracteres) y lo entrega **una sola vez**; Supabase guarda solo su SHA-256. Crear otro sustituye al anterior.
+- Propietario (con sesión): `POST|GET|DELETE /v1/projects/{id}/share` y `ProjectService/CreateProjectShare`, `GetProjectShare`, `DeleteProjectShare`. GET devuelve fechas, nunca el token ni su hash.
+- Visitante (sin sesión): `POST /v1/shared` con `{"token"}` en el cuerpo, o `ProjectService/GetSharedProject`. El token no va en la ruta ni en la consulta para que no quede en registros. La petición a Supabase lleva solo la clave pública (`apikey`), sin `Authorization`, y llama a la única función concedida a `anon`: `pf_shared_project`.
+- Devuelve nombre, secuencia y un workspace de versión 1 con fuente, descriptores y alineamiento. Nunca laboratorio, búsquedas guardadas ni datos del propietario.
+- Token mal formado, desconocido, revocado o caducado: el mismo 404 `shared-not-found`. Límite por dirección: `SHARED_REQUESTS_PER_MINUTE` (30 por omisión, por proceso).
+
+En el frontend el enlace es `/shared#<token>`: lo que va tras `#` no se envía al servidor ni en el Referer.
+
 ## Versiones de proyecto — implementación local del 10 nov 2026
 
 Migración `20261110000000_project_versions.sql` (**solo local, sin aplicar en Supabase**). Tabla `project_versions` con RLS: el propietario solo lee sus filas; la única escritora es `pf_keep_project_version` (SECURITY DEFINER), que copia lo guardado ahora y no recibe contenido del cliente. Cada guardado que cambia la secuencia o el snapshot conserva el contenido anterior; renombrar no crea versión; se guardan 5 por proyecto (`PROJECT_VERSION_LIMIT`, repetido en la migración y comprobado por prueba). Borrar el proyecto borra sus versiones.
