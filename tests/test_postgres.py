@@ -513,6 +513,53 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual((opened["activeSequence"], opened["updatedAt"]), ("ACDE", current["updatedAt"]))
         self.assertEqual(len(self.versions()), 1)
 
+    def test_a_link_shows_analysis_and_comparison_to_anyone_holding_its_hash(self):
+        digest = "a" * 64
+        shared = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{digest}');", self.owner).stdout)
+        self.assertIn("expiresAt", shared)
+        opened = json.loads(self.sql(f"select public.pf_shared_project('{digest}');", role="anon").stdout)
+        self.assertEqual((opened["name"], opened["activeSequence"]), ("Study", "ACD"))
+        self.assertEqual(opened["workspace"]["schemaVersion"], 1)
+        self.assertEqual(set(opened["workspace"]), {"schemaVersion", "profileWindow", "source", "descriptors", "alignment"})
+        self.assertNotIn("owner", json.dumps(opened).lower())
+        state = json.loads(self.sql(f"select public.pf_project_share('{self.id}');", self.owner).stdout)
+        self.assertNotIn("tokenSha256", state)
+        self.assertEqual(self.sql(f"select public.pf_project_share('{self.id}') is null;", self.other).stdout.strip(), "t")
+
+    def test_links_are_replaced_revoked_expired_and_owner_only(self):
+        first, second = "b" * 64, "c" * 64
+        self.sql(f"select public.pf_share_project('{self.id}','{first}');", self.owner)
+        self.sql(f"select public.pf_share_project('{self.id}','{second}');", self.owner)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{first}') is null;", role="anon").stdout.strip(), "t")
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{second}') is null;", role="anon").stdout.strip(), "f")
+        self.assertIn("Project not found", self.sql(f"select public.pf_share_project('{self.id}','{'d' * 64}');", self.other, check=False).stderr)
+        self.sql(f"select public.pf_unshare_project('{self.id}');", self.other)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{second}') is null;", role="anon").stdout.strip(), "f")
+        self.sql(f"update public.project_shares set expires_at = now() - interval '1 second' where project_id='{self.id}';")
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{second}') is null;", role="anon").stdout.strip(), "t")
+        self.assertEqual(self.sql(f"select public.pf_project_share('{self.id}') is null;", self.owner).stdout.strip(), "t")
+        self.sql(f"select public.pf_share_project('{self.id}','{first}');", self.owner)
+        self.sql(f"select public.pf_unshare_project('{self.id}');", self.owner)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{first}') is null;", role="anon").stdout.strip(), "t")
+
+    def test_link_table_is_private_and_written_only_by_the_server(self):
+        digest = "e" * 64
+        self.sql(f"select public.pf_share_project('{self.id}','{digest}');", self.owner)
+        self.assertEqual(self.sql("select count(*) from public.project_shares;", self.other).stdout.strip(), "0")
+        self.assertNotEqual(self.sql("select count(*) from public.project_shares;", role="anon", check=False).returncode, 0)
+        for operation in (
+            f"insert into public.project_shares(project_id,owner_id,token_sha256,expires_at) values ('{self.id}','{self.owner}','{'f' * 64}',now());",
+            f"update public.project_shares set expires_at = now() + interval '100 years' where project_id='{self.id}';",
+            f"delete from public.project_shares where project_id='{self.id}';",
+        ):
+            self.assertIn("permission denied", self.sql(operation, self.owner, check=False).stderr)
+        for call in (f"select public.pf_share_project('{self.id}','{digest}');", f"select public.pf_project_share('{self.id}');", f"select public.pf_unshare_project('{self.id}');"):
+            self.assertNotEqual(self.sql(call, role="anon", check=False).returncode, 0)
+        self.assertIn("Invalid token", self.sql(f"select public.pf_share_project('{self.id}','not-a-hash');", self.owner, check=False).stderr)
+        self.sql(f"select public.pf_delete_project('{self.id}','{self.version}');", self.owner)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{digest}') is null;", role="anon").stdout.strip(), "t")
+        self.assertEqual(self.sql("select count(*) from public.project_shares where token_sha256 = '" + digest + "';").stdout.strip(), "0")
+
     def test_report_reserve_upload_complete_list_and_delete_are_owner_scoped(self):
         reserved = self.reserve(project=self.id)
         report, path = reserved['report'], reserved['objectPath']
