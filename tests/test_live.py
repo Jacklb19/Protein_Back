@@ -78,6 +78,11 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(message["type"], "ready")
         return message
 
+    def finish(self, socket) -> None:
+        """Has the server end the session before the test leaves it; leaving first races the test client's teardown."""
+        socket.send_json({"type": "bye"})
+        self.assertEqual(self.closed(socket), (CLOSE_MALFORMED, "unknown-type"))
+
     def closed(self, socket) -> tuple[int, str]:
         with self.assertRaises(WebSocketDisconnect) as raised:
             while True:
@@ -139,6 +144,7 @@ class LiveTests(unittest.TestCase):
             self.store.rows = [{"id": SECOND, "updated_at": LATER}]
             removed = socket.receive_json()
             self.assertEqual((removed["changed"], removed["removed"]), ([], [FIRST]))
+            self.finish(socket)
         self.assertEqual(set(self.store.tokens), {"user-token"})
 
     def test_partial_window_reports_the_count_change_without_claiming_a_removal(self):
@@ -148,6 +154,7 @@ class LiveTests(unittest.TestCase):
             self.store.rows, self.store.total = [{"id": SECOND, "updated_at": LATER}], 499
             message = socket.receive_json()
             self.assertEqual((message["type"], message["removed"]), ("projects.changed", []))
+            self.finish(socket)
 
     def test_write_in_this_process_wakes_the_owners_connections_at_once(self):
         # With a look every hour, only the wake after the write can deliver the notice.
@@ -157,6 +164,7 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(created.status_code, 201)
             message = socket.receive_json()
             self.assertEqual(message["changed"], [{"id": SECOND, "updatedAt": LATER}])
+            self.finish(socket)
 
     def test_ping_is_answered_and_a_refreshed_token_replaces_the_old_one(self):
         with self.client() as client, self.connect(client) as socket:
@@ -167,6 +175,7 @@ class LiveTests(unittest.TestCase):
             self.store.rows = []
             self.assertEqual(socket.receive_json()["removed"], [FIRST])
             self.assertEqual(self.store.tokens[-1], "fresh-token")
+            self.finish(socket)
 
     def test_connection_cannot_move_to_another_account(self):
         with self.client() as client, self.connect(client) as socket:
@@ -194,6 +203,7 @@ class LiveTests(unittest.TestCase):
                 self.assertEqual(self.closed(second), (CLOSE_TOO_MANY, "too-many-connections"))
             with self.connect(client) as other:
                 self.ready(other, "other-token")
+                self.finish(other)
             for _ in range(3):
                 socket.send_json({"type": "ping"})
             self.assertEqual(self.closed(socket), (CLOSE_TOO_MANY, "too-many-messages"))
