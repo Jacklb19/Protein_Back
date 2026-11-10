@@ -296,10 +296,12 @@ class VersionRestore(Contract):
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def data_request(context: ServiceContext, token: str, method: str, path: str, *, area: str = "projects", messages: Mapping[str, tuple[int, str]] | None = None, **kwargs):
-    """PostgREST call with the user's token. `area` prefixes service errors; `messages` maps fixed SQL messages of PT codes."""
+async def data_request(context: ServiceContext, token: str | None, method: str, path: str, *, area: str = "projects", messages: Mapping[str, tuple[int, str]] | None = None, **kwargs):
+    """PostgREST call with the user's token, or anonymous with `token=None`. `area` prefixes service errors; `messages` maps fixed SQL messages of PT codes."""
     settings = context.settings
-    headers = {"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}", "Accept": "application/json"}
+    headers = {"apikey": settings.supabase_anon_key, "Accept": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         response = await context.http_client.request(method, f"{settings.supabase_url}/rest/v1/{path}", headers=headers, timeout=DATA_TIMEOUT_SECONDS, **kwargs)
     except httpx.TimeoutException as error:
@@ -333,6 +335,9 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
         # Status and error code only: provider messages can quote submitted values.
         logger.warning("Supabase data request failed: %s %s -> %s %s", method, path.split("?")[0], response.status_code, code or "no-code")
         raise HTTPException(502, f"{area}-provider-error")
+    # A function returning void answers 204 with no body.
+    if response.status_code == 204:
+        return None
     try:
         return response.json()
     except ValueError as error:

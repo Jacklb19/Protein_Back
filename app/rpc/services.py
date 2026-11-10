@@ -18,6 +18,7 @@ from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectCreate, ProjectUpdate
 from ..projects import fetch_project, fetch_projects, fetch_versions, remove_project, restore_version, save_project
+from ..shares import caller_address, create_share, open_shared, read_share, remove_share
 from ..project_config import PROJECT_NAME_LENGTH
 from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
 from ..reports import ReportUploadRequest, complete_report, download_report, fetch_reports, remove_report, reserve_report
@@ -167,6 +168,31 @@ class ProjectService(StateBound):
         expected = convert.moment(request.expected_update_time, "expected_update_time")
         project = await restore_version(self.context, token, project_id(request.project_id, "project_id"), project_id(request.version_id, "version_id"), expected, identity.id)
         return project_pb.RestoreProjectVersionResponse(project=convert.project_message(project))
+
+
+    @rpc_errors
+    async def create_project_share(self, request: project_pb.CreateProjectShareRequest, ctx: RequestContext) -> project_pb.CreateProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        created = await create_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.CreateProjectShareResponse(token=created.token, share=convert.share_message(created.share))
+
+    @rpc_errors
+    async def get_project_share(self, request: project_pb.GetProjectShareRequest, ctx: RequestContext) -> project_pb.GetProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        state = await read_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.GetProjectShareResponse(share=convert.share_message(state.share))
+
+    @rpc_errors
+    async def delete_project_share(self, request: project_pb.DeleteProjectShareRequest, ctx: RequestContext) -> project_pb.DeleteProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        await remove_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.DeleteProjectShareResponse()
+
+    @rpc_errors
+    async def get_shared_project(self, request: project_pb.GetSharedProjectRequest, ctx: RequestContext) -> project_pb.GetSharedProjectResponse:
+        # No identity: the link's token is the credential.
+        shared = await open_shared(self.context, request.token, caller_address(ctx.request_headers, None))
+        return project_pb.GetSharedProjectResponse(project=convert.shared_message(shared))
 
 
 class ReportService(StateBound):

@@ -301,6 +301,17 @@ def version_message(version: VersionModel) -> project_pb.ProjectVersion:
     return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview))
 
 
+def share_message(share) -> project_pb.ProjectShare | None:
+    return None if share is None else project_pb.ProjectShare(create_time=timestamp(share.created_at), expire_time=timestamp(share.expires_at))
+
+
+def shared_message(shared) -> project_pb.SharedProject:
+    return project_pb.SharedProject(
+        name=shared.name, active_sequence=shared.active_sequence, workspace=workspace_message(shared.workspace),
+        update_time=timestamp(shared.updated_at), expire_time=timestamp(shared.expires_at),
+    )
+
+
 def report_kind(value: report_pb.ReportKind) -> str:
     return _enum(REPORT_KIND_VALUES, value, "kind")
 

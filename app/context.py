@@ -24,10 +24,11 @@ class ServiceContext:
     sifts_cache: SiftsCache = field(default_factory=SiftsCache)
     assistant_cache: AssistantCache = field(default_factory=AssistantCache)
     live_hub: LiveHub = field(default_factory=LiveHub)
+    shared_limiter: FixedWindowLimiter = field(default_factory=lambda: FixedWindowLimiter(0))
 
 
 def context_from_state(state: Any) -> ServiceContext:
-    return ServiceContext(settings=state.settings, http_client=state.http_client, uniprot_limiter=state.uniprot_limiter, assistant_limiter=state.assistant_limiter, sifts_cache=state.sifts_cache, assistant_cache=state.assistant_cache, live_hub=state.live_hub)
+    return ServiceContext(settings=state.settings, http_client=state.http_client, uniprot_limiter=state.uniprot_limiter, assistant_limiter=state.assistant_limiter, sifts_cache=state.sifts_cache, assistant_cache=state.assistant_cache, live_hub=state.live_hub, shared_limiter=state.shared_limiter)
 
 
 def context_of(request: Request) -> ServiceContext:

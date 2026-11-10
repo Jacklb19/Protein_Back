@@ -26,6 +26,8 @@ DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
 # Interpretations one signed-in caller may request each minute, per process. 0 disables the budget.
 DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE = 6
 DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
+# Shared-link reads one visitor address may make each minute, per process. 0 disables the budget.
+DEFAULT_SHARED_REQUESTS_PER_MINUTE = 30
 # Verified readings kept per process so an identical request does not reach the provider again.
 # Short-lived and bounded; 0 in either setting disables the cache.
 DEFAULT_ASSISTANT_CACHE_TTL_SECONDS = 300.0
@@ -52,6 +54,7 @@ class Settings:
     folding_enabled: bool = False
     api_docs_enabled: bool = False
     live_enabled: bool = False
+    shared_requests_per_minute: int = DEFAULT_SHARED_REQUESTS_PER_MINUTE
     live_poll_seconds: float = DEFAULT_LIVE_POLL_SECONDS
     live_max_connection_seconds: float = DEFAULT_LIVE_MAX_CONNECTION_SECONDS
     live: LiveLimits = LiveLimits()
@@ -86,6 +89,7 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     cache_ttl = env.get("ASSISTANT_CACHE_TTL_SECONDS", "")
     cache_entries = env.get("ASSISTANT_CACHE_MAX_ENTRIES", "")
     live_poll = env.get("LIVE_POLL_SECONDS", "")
+    shared_budget = env.get("SHARED_REQUESTS_PER_MINUTE", "")
     live_duration = env.get("LIVE_MAX_CONNECTION_SECONDS", "")
     return Settings(
         allowed_origins=origins,
@@ -101,6 +105,7 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         folding_enabled=env.get("FOLDING_ENABLED", "").strip() == "enabled",
         api_docs_enabled=env.get("API_DOCS_ENABLED", "").strip() == "enabled",
         live_enabled=env.get("LIVE_ENABLED", "").strip() == "enabled",
+        shared_requests_per_minute=int(shared_budget) if shared_budget else DEFAULT_SHARED_REQUESTS_PER_MINUTE,
         live_poll_seconds=float(live_poll) if live_poll else DEFAULT_LIVE_POLL_SECONDS,
         live_max_connection_seconds=float(live_duration) if live_duration else DEFAULT_LIVE_MAX_CONNECTION_SECONDS,
     )

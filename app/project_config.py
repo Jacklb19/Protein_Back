@@ -11,3 +11,9 @@ PROJECT_VERSIONS_RPC = "rpc/pf_list_project_versions"
 PROJECT_RESTORE_RPC = "rpc/pf_restore_project_version"
 # Fixed message of pf_restore_project_version; never contains submitted data.
 VERSION_NOT_FOUND_MESSAGE = "Version not found"
+# Read-only links: random bytes per token (43 URL-safe characters) and days a link lasts, repeated in
+# 20261111000000_project_shares.sql.
+PROJECT_SHARE_TOKEN_BYTES = 32
+PROJECT_SHARE_TOKEN_PATTERN = r"[A-Za-z0-9_-]{43}"
+PROJECT_SHARE_TOKEN_MAX_LENGTH = 64
+PROJECT_SHARE_LIFETIME_DAYS = 7
