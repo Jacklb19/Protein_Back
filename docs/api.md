@@ -1,5 +1,14 @@
 # Contratos de API
 
+## Versiones de proyecto — implementación local del 10 nov 2026
+
+Migración `20261110000000_project_versions.sql` (**solo local, sin aplicar en Supabase**). Tabla `project_versions` con RLS: el propietario solo lee sus filas; la única escritora es `pf_keep_project_version` (SECURITY DEFINER), que copia lo guardado ahora y no recibe contenido del cliente. Cada guardado que cambia la secuencia o el snapshot conserva el contenido anterior; renombrar no crea versión; se guardan 5 por proyecto (`PROJECT_VERSION_LIMIT`, repetido en la migración y comprobado por prueba). Borrar el proyecto borra sus versiones.
+
+- `GET /v1/projects/{id}/versions` y `ProjectService/ListProjectVersions`: hasta 5, más recientes primero, con vista previa compacta; nunca el snapshot.
+- `POST /v1/projects/{id}/versions/{versionId}/restore` (`{"expectedUpdatedAt"}`) y `ProjectService/RestoreProjectVersion`: restaura en una transacción, conserva el nombre y el bloqueo optimista (409), guarda antes lo actual como versión (se puede deshacer) y quita de la lista la versión restaurada. 404 `project-version-not-found`. Es la única escritura que puede bajar `schemaVersion`, porque la versión ya fue un snapshot válido.
+
+Coste: hasta 5 × 1,9 MB por proyecto en el peor caso (laboratorio completo); las búsquedas guardadas del generador también crean versión. Pendiente: aplicar la migración en Supabase (autorización del propietario), publicar backend y después repinchar `buf.gen.yaml` del frontend.
+
 ## Canal en vivo — implementación local del 10 nov 2026
 
 [Protocolo, seguridad y activación](live.md): `GET /v1/live` (WebSocket, subprotocolo `proteinforge.live.v1`), desactivado salvo `LIVE_ENABLED=enabled`. Token en el primer mensaje, origen comprobado, avisos `projects.changed` con identificadores y marcas de tiempo. Sin migraciones. Sin publicar.
