@@ -448,6 +448,71 @@ class PostgresSecurityTests(unittest.TestCase):
         statement = f"select coalesce(jsonb_agg(r), '[]'::jsonb) from public.pf_list_reports(51,0,{target}) r;"
         return json.loads(self.sql(statement, user or self.owner).stdout)
 
+    def save_content(self, name, sequence, version, user=None):
+        result = self.sql(f"select public.pf_save_project('{self.id}','{name}','{sequence}','{self.snapshot}','{version}');", user or self.owner)
+        return json.loads(result.stdout)
+
+    def versions(self, user=None):
+        return json.loads(self.sql(f"select public.pf_list_project_versions('{self.id}', 40);", user or self.owner).stdout)
+
+    def test_versions_keep_replaced_content_not_renames_and_stop_at_five(self):
+        renamed = self.save_content("Renamed", "ACD", self.version)
+        self.assertEqual(self.versions(), [])
+        current = renamed
+        for sequence in ("ACDE", "ACDEF", "ACDEFG", "ACDEFGH", "ACDEFGHI", "ACDEFGHIK"):
+            current = self.save_content("Renamed", sequence, current["updatedAt"])
+        listed = self.versions()
+        # Newest first, five at most: the oldest content (ACD) has been dropped.
+        self.assertEqual([item["preview"]["sequencePrefix"] for item in listed], ["ACDEFGHI", "ACDEFGH", "ACDEFG", "ACDEF", "ACDE"])
+        self.assertEqual(len({item["id"] for item in listed}), 5)
+        self.assertNotIn("workspace", listed[0])
+        self.assertEqual(self.sql(f"select count(*) from public.project_versions where project_id='{self.id}';").stdout.strip(), "5")
+
+    def test_versions_are_private_read_only_and_go_with_their_project(self):
+        current = self.save_content("Study", "ACDE", self.version)
+        self.assertEqual(len(self.versions()), 1)
+        self.assertEqual(self.versions(self.other), [])
+        self.assertEqual(self.sql(f"select count(*) from public.project_versions where project_id='{self.id}';", self.other).stdout.strip(), "0")
+        for operation in (
+            f"insert into public.project_versions(project_id,owner_id,active_sequence,workspace,saved_at) values ('{self.id}','{self.owner}','WWW','{self.snapshot}',now());",
+            f"update public.project_versions set active_sequence='WWW' where project_id='{self.id}';",
+            f"delete from public.project_versions where project_id='{self.id}';",
+        ):
+            self.assertIn("permission denied", self.sql(operation, self.owner, check=False).stderr)
+        # Calling the writer directly only copies what the caller already has; another owner copies nothing.
+        self.sql(f"select public.pf_keep_project_version('{self.id}');", self.other)
+        self.assertEqual(len(self.versions()), 1)
+        self.assertNotEqual(self.sql(f"select public.pf_list_project_versions('{self.id}', 40);", role="anon", check=False).returncode, 0)
+        self.sql(f"select public.pf_delete_project('{self.id}','{current['updatedAt']}');", self.owner)
+        self.assertEqual(self.sql(f"select count(*) from public.project_versions where project_id='{self.id}';").stdout.strip(), "0")
+
+    def test_restore_brings_content_back_keeps_the_name_and_can_be_undone(self):
+        current = self.save_content("Study", "ACDE", self.version)
+        current = self.save_content("Renamed", "ACDE", current["updatedAt"])
+        kept = self.versions()[0]
+        restored = json.loads(self.sql(f"select public.pf_restore_project_version('{self.id}','{kept['id']}','{current['updatedAt']}');", self.owner).stdout)
+        self.assertEqual((restored["name"], restored["activeSequence"]), ("Renamed", "ACD"))
+        self.assertNotEqual(restored["updatedAt"], current["updatedAt"])
+        listed = self.versions()
+        # What was current is now the only version; the restored one is not listed twice.
+        self.assertEqual([item["preview"]["sequencePrefix"] for item in listed], ["ACDE"])
+        undone = json.loads(self.sql(f"select public.pf_restore_project_version('{self.id}','{listed[0]['id']}','{restored['updatedAt']}');", self.owner).stdout)
+        self.assertEqual(undone["activeSequence"], "ACDE")
+
+    def test_restore_refuses_stale_foreign_and_mismatched_requests_without_writing(self):
+        current = self.save_content("Study", "ACDE", self.version)
+        kept = self.versions()[0]
+        stale = self.sql(f"select public.pf_restore_project_version('{self.id}','{kept['id']}','{self.version}');", self.owner, check=False)
+        self.assertIn("Project changed", stale.stderr)
+        foreign = self.sql(f"select public.pf_restore_project_version('{self.id}','{kept['id']}','{current['updatedAt']}');", self.other, check=False)
+        self.assertIn("Version not found", foreign.stderr)
+        other_project = json.loads(self.sql(f"select public.pf_save_project(null,'Other','WWW','{self.snapshot}',null);", self.owner).stdout)
+        mismatched = self.sql(f"select public.pf_restore_project_version('{other_project['id']}','{kept['id']}','{other_project['updatedAt']}');", self.owner, check=False)
+        self.assertIn("Version not found", mismatched.stderr)
+        opened = json.loads(self.sql(f"select public.pf_project_document('{self.id}');", self.owner).stdout)
+        self.assertEqual((opened["activeSequence"], opened["updatedAt"]), ("ACDE", current["updatedAt"]))
+        self.assertEqual(len(self.versions()), 1)
+
     def test_report_reserve_upload_complete_list_and_delete_are_owner_scoped(self):
         reserved = self.reserve(project=self.id)
         report, path = reserved['report'], reserved['objectPath']
