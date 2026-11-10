@@ -8,10 +8,14 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+from .live_config import DEFAULT_LIVE_MAX_CONNECTION_SECONDS, DEFAULT_LIVE_POLL_SECONDS, LiveLimits
+
 API_PREFIX = "/v1"
 SUPABASE_AUTH_PATH = "/auth/v1"
 SUPABASE_STORAGE_PATH = "/storage/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
+# Readings the caller may still ask for in the current minute; absent when the budget is disabled.
+ASSISTANT_REMAINING_HEADER = "X-Assistant-Remaining"
 
 # Request headers that browsers send for Connect and gRPC-Web calls, and gRPC status headers they must read.
 RPC_REQUEST_HEADERS = ("Connect-Protocol-Version", "Connect-Timeout-Ms", "Grpc-Timeout", "X-Grpc-Web", "X-User-Agent")
@@ -22,6 +26,8 @@ DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
 # Interpretations one signed-in caller may request each minute, per process. 0 disables the budget.
 DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE = 6
 DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
+# Shared-link reads one visitor address may make each minute, per process. 0 disables the budget.
+DEFAULT_SHARED_REQUESTS_PER_MINUTE = 30
 # Verified readings kept per process so an identical request does not reach the provider again.
 # Short-lived and bounded; 0 in either setting disables the cache.
 DEFAULT_ASSISTANT_CACHE_TTL_SECONDS = 300.0
@@ -47,6 +53,11 @@ class Settings:
     assistant_cache_max_entries: int = DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES
     folding_enabled: bool = False
     api_docs_enabled: bool = False
+    live_enabled: bool = False
+    shared_requests_per_minute: int = DEFAULT_SHARED_REQUESTS_PER_MINUTE
+    live_poll_seconds: float = DEFAULT_LIVE_POLL_SECONDS
+    live_max_connection_seconds: float = DEFAULT_LIVE_MAX_CONNECTION_SECONDS
+    live: LiveLimits = LiveLimits()
 
     @property
     def assistant_enabled(self) -> bool:
@@ -77,6 +88,9 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     assistant_budget = env.get("ASSISTANT_REQUESTS_PER_MINUTE", "")
     cache_ttl = env.get("ASSISTANT_CACHE_TTL_SECONDS", "")
     cache_entries = env.get("ASSISTANT_CACHE_MAX_ENTRIES", "")
+    live_poll = env.get("LIVE_POLL_SECONDS", "")
+    shared_budget = env.get("SHARED_REQUESTS_PER_MINUTE", "")
+    live_duration = env.get("LIVE_MAX_CONNECTION_SECONDS", "")
     return Settings(
         allowed_origins=origins,
         supabase_url=env.get("SUPABASE_URL", "").strip().rstrip("/"),
@@ -90,4 +104,8 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         assistant_cache_max_entries=int(cache_entries) if cache_entries else DEFAULT_ASSISTANT_CACHE_MAX_ENTRIES,
         folding_enabled=env.get("FOLDING_ENABLED", "").strip() == "enabled",
         api_docs_enabled=env.get("API_DOCS_ENABLED", "").strip() == "enabled",
+        live_enabled=env.get("LIVE_ENABLED", "").strip() == "enabled",
+        shared_requests_per_minute=int(shared_budget) if shared_budget else DEFAULT_SHARED_REQUESTS_PER_MINUTE,
+        live_poll_seconds=float(live_poll) if live_poll else DEFAULT_LIVE_POLL_SECONDS,
+        live_max_connection_seconds=float(live_duration) if live_duration else DEFAULT_LIVE_MAX_CONNECTION_SECONDS,
     )

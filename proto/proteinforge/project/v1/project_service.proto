@@ -38,6 +38,35 @@ service ProjectService {
 
   // Deletes the project and its stored results.
   rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+
+  // Earlier contents of a project, newest first, as compact previews. Every update that changes
+  // the sequence or the workspace keeps the content it replaces; a rename alone keeps none.
+  rpc ListProjectVersions(ListProjectVersionsRequest) returns (ListProjectVersionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Puts a version back as the content, keeping the name; the current content becomes a version
+  // first, so a restore can be undone. NOT_FOUND names "project-version-not-found".
+  rpc RestoreProjectVersion(RestoreProjectVersionRequest) returns (RestoreProjectVersionResponse);
+
+  // Starts or replaces the project's read-only link. The token is in this answer only; the server
+  // keeps its hash. The previous token stops working at once.
+  rpc CreateProjectShare(CreateProjectShareRequest) returns (CreateProjectShareResponse);
+
+  // The project's current link, without its token; absent when there is none or it expired.
+  rpc GetProjectShare(GetProjectShareRequest) returns (GetProjectShareResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Ends the project's link.
+  rpc DeleteProjectShare(DeleteProjectShareRequest) returns (DeleteProjectShareResponse);
+
+  // Needs no bearer token: the link's token is the credential. Answers name, sequence, analysis and
+  // comparison as a schema-1 workspace; never the laboratory, saved searches or the owner. A wrong,
+  // revoked or expired token is NOT_FOUND "shared-not-found"; too many reads RESOURCE_EXHAUSTED.
+  rpc GetSharedProject(GetSharedProjectRequest) returns (GetSharedProjectResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message ProjectSummary {
@@ -174,3 +203,77 @@ message DeleteProjectRequest {
 }
 
 message DeleteProjectResponse {}
+
+message ProjectVersion {
+  // UUID.
+  string id = 1;
+  // When this content was saved.
+  google.protobuf.Timestamp save_time = 2;
+  ProjectPreview preview = 3;
+}
+
+message ListProjectVersionsRequest {
+  string project_id = 1;
+}
+
+message ListProjectVersionsResponse {
+  // At most five, newest first.
+  repeated ProjectVersion versions = 1;
+}
+
+message RestoreProjectVersionRequest {
+  string project_id = 1;
+  string version_id = 2;
+  // The update_time the client last read; ABORTED when it no longer matches.
+  google.protobuf.Timestamp expected_update_time = 3;
+}
+
+message RestoreProjectVersionResponse {
+  Project project = 1;
+}
+
+message ProjectShare {
+  google.protobuf.Timestamp create_time = 1;
+  google.protobuf.Timestamp expire_time = 2;
+}
+
+message CreateProjectShareRequest {
+  string project_id = 1;
+}
+
+message CreateProjectShareResponse {
+  // 43 URL-safe characters; shown once.
+  string token = 1;
+  ProjectShare share = 2;
+}
+
+message GetProjectShareRequest {
+  string project_id = 1;
+}
+
+message GetProjectShareResponse {
+  ProjectShare share = 1;
+}
+
+message DeleteProjectShareRequest {
+  string project_id = 1;
+}
+
+message DeleteProjectShareResponse {}
+
+message GetSharedProjectRequest {
+  string token = 1;
+}
+
+message SharedProject {
+  string name = 1;
+  string active_sequence = 2;
+  // Schema version 1: source, descriptors and alignment only.
+  Workspace workspace = 3;
+  google.protobuf.Timestamp update_time = 4;
+  google.protobuf.Timestamp expire_time = 5;
+}
+
+message GetSharedProjectResponse {
+  SharedProject project = 1;
+}

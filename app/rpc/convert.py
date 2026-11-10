@@ -20,6 +20,7 @@ from ..assistant import Interpretation as InterpretationModel
 from ..projects import AlignmentSnapshot as AlignmentModel
 from ..projects import Project as ProjectModel
 from ..projects import ProjectSummary as SummaryModel
+from ..projects import ProjectVersion as VersionModel
 from ..projects import ProjectPreview, ProjectAlignmentPreview, ProjectAlignmentMetrics, ProjectSourcePreview
 from ..project_config import DEFAULT_PROJECT_ORDER, PROJECT_PREVIEW_RESIDUES
 from ..project_config import PROJECT_ORDERS
@@ -293,6 +294,21 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
             matrix=_reverse(MATRICES)[alignment.matrix], mode=_reverse(MODES)[alignment.mode],
             result=project_pb.ProjectAlignmentMetrics(identities=result.identities, similarities=result.similarities, columns=result.columns) if result else None,
         ) if alignment else None,
+    )
+
+
+def version_message(version: VersionModel) -> project_pb.ProjectVersion:
+    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview))
+
+
+def share_message(share) -> project_pb.ProjectShare | None:
+    return None if share is None else project_pb.ProjectShare(create_time=timestamp(share.created_at), expire_time=timestamp(share.expires_at))
+
+
+def shared_message(shared) -> project_pb.SharedProject:
+    return project_pb.SharedProject(
+        name=shared.name, active_sequence=shared.active_sequence, workspace=workspace_message(shared.workspace),
+        update_time=timestamp(shared.updated_at), expire_time=timestamp(shared.expires_at),
     )
 
 

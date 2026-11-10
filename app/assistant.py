@@ -19,6 +19,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import Field
 
+from .config import ASSISTANT_REMAINING_HEADER
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity
 from .projects import Contract
@@ -314,10 +315,19 @@ async def interpret(context: ServiceContext, request: InterpretRequest, requeste
     return interpretation
 
 
+def remaining_header(context: ServiceContext, requester: str) -> dict[str, str]:
+    """What the caller may still ask for this minute, as a response header; empty without a budget."""
+    remaining = context.assistant_limiter.remaining(requester)
+    return {} if remaining is None else {ASSISTANT_REMAINING_HEADER: str(remaining)}
+
+
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 
 @router.post("/interpret", response_model=Interpretation)
 async def interpret_route(request: Request, response: Response, identity: CurrentIdentity, body: InterpretRequest) -> Interpretation:
     response.headers["Cache-Control"] = "no-store"
-    return await interpret(context_of(request), body, identity.id)
+    context = context_of(request)
+    interpretation = await interpret(context, body, identity.id)
+    response.headers.update(remaining_header(context, identity.id))
+    return interpretation

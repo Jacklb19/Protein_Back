@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .config import API_DOCS_PATHS, API_PREFIX, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
+from .config import API_DOCS_PATHS, API_PREFIX, ASSISTANT_REMAINING_HEADER, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
 from .correlation import Correlation
 from .security_headers import SecurityHeaders
 from .identity import CurrentIdentity
@@ -24,6 +24,8 @@ from .assistant_cache import AssistantCache
 from .residue_mapping import router as residue_mapping_router
 from .sifts_cache import SiftsCache
 from .folding import FoldingGate, router as folding_router
+from .live import LiveHub, router as live_router
+from .shares import router as shares_router
 from .rpc.router import RpcRouter, rpc_applications
 from .rate_limit import FixedWindowLimiter
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
@@ -68,6 +70,8 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     app.state.assistant_cache = AssistantCache(resolved.assistant_cache_ttl_seconds, resolved.assistant_cache_max_entries)
     app.state.sifts_cache = SiftsCache()
     app.state.folding_gate = FoldingGate()
+    app.state.live_hub = LiveHub(resolved.live.connections_per_caller)
+    app.state.shared_limiter = FixedWindowLimiter(resolved.shared_requests_per_minute)
     # RPC services share the app state with REST; added first so CORS wraps them too.
     app.add_middleware(RpcRouter, applications=rpc_applications(app.state, API_VERSION))
     app.add_middleware(
@@ -76,7 +80,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, *RPC_REQUEST_HEADERS],
-        expose_headers=[REQUEST_ID_HEADER, *RPC_RESPONSE_HEADERS],
+        expose_headers=[REQUEST_ID_HEADER, ASSISTANT_REMAINING_HEADER, *RPC_RESPONSE_HEADERS],
     )
     # Outermost, so REST, RPC and CORS answers all carry the request id.
     app.add_middleware(Correlation)
@@ -91,6 +95,8 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     app.include_router(assistant_router, prefix=API_PREFIX)
     app.include_router(residue_mapping_router, prefix=API_PREFIX)
     app.include_router(folding_router, prefix=API_PREFIX)
+    app.include_router(live_router, prefix=API_PREFIX)
+    app.include_router(shares_router, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/health", response_model=Health, tags=["service"])
     async def health() -> Health:

@@ -17,7 +17,10 @@ from .context import ServiceContext, context_of
 from .identity import CurrentIdentity, bearer_token
 from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
 from .laboratory import LaboratorySnapshot, laboratory_document
-from .project_config import DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES
+from .project_config import (
+    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT,
+    PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -267,13 +270,38 @@ class ProjectList(Contract):
     next_offset: int | None
 
 
+class ProjectVersion(Contract):
+    """An earlier content of a project: when it was saved and a compact preview, never the snapshot."""
+
+    id: UUID
+    saved_at: str
+    preview: ProjectPreview | None = None
+
+
+class ProjectVersionList(Contract):
+    items: list[ProjectVersion] = Field(max_length=PROJECT_VERSION_LIMIT)
+
+
+class VersionRestore(Contract):
+    expected_updated_at: datetime
+
+    @field_validator("expected_updated_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("Timezone required")
+        return value
+
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-async def data_request(context: ServiceContext, token: str, method: str, path: str, *, area: str = "projects", messages: Mapping[str, tuple[int, str]] | None = None, **kwargs):
-    """PostgREST call with the user's token. `area` prefixes service errors; `messages` maps fixed SQL messages of PT codes."""
+async def data_request(context: ServiceContext, token: str | None, method: str, path: str, *, area: str = "projects", messages: Mapping[str, tuple[int, str]] | None = None, **kwargs):
+    """PostgREST call with the user's token, or anonymous with `token=None`. `area` prefixes service errors; `messages` maps fixed SQL messages of PT codes."""
     settings = context.settings
-    headers = {"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {token}", "Accept": "application/json"}
+    headers = {"apikey": settings.supabase_anon_key, "Accept": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         response = await context.http_client.request(method, f"{settings.supabase_url}/rest/v1/{path}", headers=headers, timeout=DATA_TIMEOUT_SECONDS, **kwargs)
     except httpx.TimeoutException as error:
@@ -307,6 +335,9 @@ async def data_request(context: ServiceContext, token: str, method: str, path: s
         # Status and error code only: provider messages can quote submitted values.
         logger.warning("Supabase data request failed: %s %s -> %s %s", method, path.split("?")[0], response.status_code, code or "no-code")
         raise HTTPException(502, f"{area}-provider-error")
+    # A function returning void answers 204 with no body.
+    if response.status_code == 204:
+        return None
     try:
         return response.json()
     except ValueError as error:
@@ -344,10 +375,31 @@ async def fetch_project(context: ServiceContext, token: str, project_id: UUID) -
     return document(await data_request(context, token, "POST", "rpc/pf_project_document", json={"p_id": str(project_id)}))
 
 
-async def remove_project(context: ServiceContext, token: str, project_id: UUID, expected: datetime) -> None:
+async def remove_project(context: ServiceContext, token: str, project_id: UUID, expected: datetime, owner_id: str | None = None) -> None:
     if expected.tzinfo is None:
         raise HTTPException(422, "validation")
     await data_request(context, token, "POST", "rpc/pf_delete_project", json={"p_id": str(project_id), "p_expected_updated_at": expected.isoformat()})
+    context.live_hub.notify(owner_id)
+
+
+async def fetch_versions(context: ServiceContext, token: str, project_id: UUID) -> ProjectVersionList:
+    """RLS limits the rows to the caller's; another owner's project simply has no versions."""
+    rows = await data_request(context, token, "POST", PROJECT_VERSIONS_RPC, json={"p_id": str(project_id), "p_prefix_length": PROJECT_PREVIEW_RESIDUES})
+    try:
+        return ProjectVersionList.model_validate({"items": rows})
+    except ValidationError as error:
+        raise HTTPException(502, "projects-invalid-response") from error
+
+
+async def restore_version(context: ServiceContext, token: str, project_id: UUID, version_id: UUID, expected: datetime, owner_id: str | None = None) -> Project:
+    """Puts a version back in one transaction; what was current becomes a version, so it can be undone."""
+    if expected.tzinfo is None:
+        raise HTTPException(422, "validation")
+    project = document(await data_request(context, token, "POST", PROJECT_RESTORE_RPC, messages={VERSION_NOT_FOUND_MESSAGE: (404, "project-version-not-found")}, json={
+        "p_project_id": str(project_id), "p_version_id": str(version_id), "p_expected_updated_at": expected.isoformat(),
+    }))
+    context.live_hub.notify(owner_id)
+    return project
 
 
 @router.get("", response_model=ProjectList)
@@ -360,7 +412,8 @@ async def get_project(project_id: UUID, request: Request, _identity: CurrentIden
     return await fetch_project(context_of(request), token, project_id)
 
 
-async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None) -> Project:
+async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None, owner_id: str | None = None) -> Project:
+    """Stores the project; `owner_id` lets the owner's live connections in this process hear of it at once."""
     arguments = {
         "p_id": str(project_id) if project_id else None,
         "p_name": payload.name,
@@ -371,20 +424,32 @@ async def save_project(context: ServiceContext, token: str, payload: ProjectWrit
     # Sent only when present, so creates without a key also work before the idempotency migration.
     if isinstance(payload, ProjectCreate) and payload.request_id is not None:
         arguments["p_create_request_id"] = str(payload.request_id)
-    return document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
+    project = document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
+    context.live_hub.notify(owner_id)
+    return project
+
+
+@router.get("/{project_id}/versions", response_model=ProjectVersionList)
+async def list_versions(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token):
+    return await fetch_versions(context_of(request), token, project_id)
+
+
+@router.post("/{project_id}/versions/{version_id}/restore", response_model=Project)
+async def restore_project_version(project_id: UUID, version_id: UUID, payload: VersionRestore, request: Request, identity: CurrentIdentity, token: Token):
+    return await restore_version(context_of(request), token, project_id, version_id, payload.expected_updated_at, identity.id)
 
 
 @router.post("", response_model=Project, status_code=201)
-async def create_project(payload: ProjectCreate, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(context_of(request), token, payload)
+async def create_project(payload: ProjectCreate, request: Request, identity: CurrentIdentity, token: Token):
+    return await save_project(context_of(request), token, payload, owner_id=identity.id)
 
 
 @router.put("/{project_id}", response_model=Project)
-async def update_project(project_id: UUID, payload: ProjectUpdate, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(context_of(request), token, payload, project_id, payload.expected_updated_at)
+async def update_project(project_id: UUID, payload: ProjectUpdate, request: Request, identity: CurrentIdentity, token: Token):
+    return await save_project(context_of(request), token, payload, project_id, payload.expected_updated_at, identity.id)
 
 
 @router.delete("/{project_id}", status_code=204)
-async def delete_project(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token, expected_updated_at: Annotated[datetime, Query(alias="expectedUpdatedAt")]):
-    await remove_project(context_of(request), token, project_id, expected_updated_at)
+async def delete_project(project_id: UUID, request: Request, identity: CurrentIdentity, token: Token, expected_updated_at: Annotated[datetime, Query(alias="expectedUpdatedAt")]):
+    await remove_project(context_of(request), token, project_id, expected_updated_at, identity.id)
     return Response(status_code=204)

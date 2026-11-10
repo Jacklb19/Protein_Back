@@ -1,5 +1,30 @@
 # Contratos de API
 
+## Enlaces de solo lectura — implementación local del 11 nov 2026
+
+Migración `20261111000000_project_shares.sql` (**solo local, sin aplicar en Supabase**). Un enlace por proyecto; caduca a los 7 días (`PROJECT_SHARE_LIFETIME_DAYS`, repetido en la migración y comprobado por prueba).
+
+- La API genera el token (32 bytes aleatorios, 43 caracteres) y lo entrega **una sola vez**; Supabase guarda solo su SHA-256. Crear otro sustituye al anterior.
+- Propietario (con sesión): `POST|GET|DELETE /v1/projects/{id}/share` y `ProjectService/CreateProjectShare`, `GetProjectShare`, `DeleteProjectShare`. GET devuelve fechas, nunca el token ni su hash.
+- Visitante (sin sesión): `POST /v1/shared` con `{"token"}` en el cuerpo, o `ProjectService/GetSharedProject`. El token no va en la ruta ni en la consulta para que no quede en registros. La petición a Supabase lleva solo la clave pública (`apikey`), sin `Authorization`, y llama a la única función concedida a `anon`: `pf_shared_project`.
+- Devuelve nombre, secuencia y un workspace de versión 1 con fuente, descriptores y alineamiento. Nunca laboratorio, búsquedas guardadas ni datos del propietario.
+- Token mal formado, desconocido, revocado o caducado: el mismo 404 `shared-not-found`. Límite por dirección: `SHARED_REQUESTS_PER_MINUTE` (30 por omisión, por proceso).
+
+En el frontend el enlace es `/shared#<token>`: lo que va tras `#` no se envía al servidor ni en el Referer.
+
+## Versiones de proyecto — implementación local del 10 nov 2026
+
+Migración `20261110000000_project_versions.sql` (**solo local, sin aplicar en Supabase**). Tabla `project_versions` con RLS: el propietario solo lee sus filas; la única escritora es `pf_keep_project_version` (SECURITY DEFINER), que copia lo guardado ahora y no recibe contenido del cliente. Cada guardado que cambia la secuencia o el snapshot conserva el contenido anterior; renombrar no crea versión; se guardan 5 por proyecto (`PROJECT_VERSION_LIMIT`, repetido en la migración y comprobado por prueba). Borrar el proyecto borra sus versiones.
+
+- `GET /v1/projects/{id}/versions` y `ProjectService/ListProjectVersions`: hasta 5, más recientes primero, con vista previa compacta; nunca el snapshot.
+- `POST /v1/projects/{id}/versions/{versionId}/restore` (`{"expectedUpdatedAt"}`) y `ProjectService/RestoreProjectVersion`: restaura en una transacción, conserva el nombre y el bloqueo optimista (409), guarda antes lo actual como versión (se puede deshacer) y quita de la lista la versión restaurada. 404 `project-version-not-found`. Es la única escritura que puede bajar `schemaVersion`, porque la versión ya fue un snapshot válido.
+
+Coste: hasta 5 × 1,9 MB por proyecto en el peor caso (laboratorio completo); las búsquedas guardadas del generador también crean versión. Pendiente: aplicar la migración en Supabase (autorización del propietario), publicar backend y después repinchar `buf.gen.yaml` del frontend.
+
+## Canal en vivo — implementación local del 10 nov 2026
+
+[Protocolo, seguridad y activación](live.md): `GET /v1/live` (WebSocket, subprotocolo `proteinforge.live.v1`), desactivado salvo `LIVE_ENABLED=enabled`. Token en el primer mensaje, origen comprobado, avisos `projects.changed` con identificadores y marcas de tiempo. Sin migraciones. Sin publicar.
+
 ## Informes en Storage — implementación local del 1 nov 2026
 
 [Propuesta y contrato](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/reports-storage-proposal-2026-11-01.md) (RF-14). `/v1/reports` (`POST` reserva y URL firmada de subida, `GET` lista, `POST /{id}/complete`, `POST /{id}/download`, `DELETE /{id}`) y `proteinforge.report.v1.ReportService`, autenticados. La API nunca recibe los bytes: el navegador sube directamente a Storage con la URL firmada; PostgREST y Storage reciben el JWT del usuario. Bucket privado `reports`, tabla `reports` con RLS, cuota por propietario y límites en `app/report_config.py`, repetidos en la migración [20261101000000_report_storage.sql](../supabase/migrations/20261101000000_report_storage.sql), aplicada por el propietario el 2 nov 2026 (declarado, sin inspección remota). Interfaz en el frontend detrás de `VITE_REPORT_STORAGE`, todavía sin activar.

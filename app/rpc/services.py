@@ -10,14 +10,15 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
-from ..assistant import InterpretRequest, interpret
+from ..assistant import InterpretRequest, interpret, remaining_header
 from ..folding import predict
 from ..folding_models import FoldRequest
 from ..config import Settings
 from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectCreate, ProjectUpdate
-from ..projects import fetch_project, fetch_projects, remove_project, save_project
+from ..projects import fetch_project, fetch_projects, fetch_versions, remove_project, restore_version, save_project
+from ..shares import caller_address, create_share, open_shared, read_share, remove_share
 from ..project_config import PROJECT_NAME_LENGTH
 from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
 from ..reports import ReportUploadRequest, complete_report, download_report, fetch_reports, remove_report, reserve_report
@@ -133,26 +134,65 @@ class ProjectService(StateBound):
 
     @rpc_errors
     async def create_project(self, request: project_pb.CreateProjectRequest, ctx: RequestContext) -> project_pb.CreateProjectResponse:
-        _identity, token = await self.identity(ctx)
+        identity, token = await self.identity(ctx)
         document = convert.write_document(request.name, request.active_sequence, request.workspace)
         payload = ProjectCreate.model_validate({**document, "requestId": optional_id(request.request_id, "request_id")})
-        project = await save_project(self.context, token, payload)
+        project = await save_project(self.context, token, payload, owner_id=identity.id)
         return project_pb.CreateProjectResponse(project=convert.project_message(project))
 
     @rpc_errors
     async def update_project(self, request: project_pb.UpdateProjectRequest, ctx: RequestContext) -> project_pb.UpdateProjectResponse:
-        _identity, token = await self.identity(ctx)
+        identity, token = await self.identity(ctx)
         expected = convert.moment(request.expected_update_time, "expected_update_time")
         document = convert.write_document(request.name, request.active_sequence, request.workspace)
         payload = ProjectUpdate.model_validate({**document, "expectedUpdatedAt": expected})
-        project = await save_project(self.context, token, payload, project_id(request.id), expected)
+        project = await save_project(self.context, token, payload, project_id(request.id), expected, identity.id)
         return project_pb.UpdateProjectResponse(project=convert.project_message(project))
 
     @rpc_errors
     async def delete_project(self, request: project_pb.DeleteProjectRequest, ctx: RequestContext) -> project_pb.DeleteProjectResponse:
-        _identity, token = await self.identity(ctx)
-        await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"))
+        identity, token = await self.identity(ctx)
+        await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"), identity.id)
         return project_pb.DeleteProjectResponse()
+
+
+    @rpc_errors
+    async def list_project_versions(self, request: project_pb.ListProjectVersionsRequest, ctx: RequestContext) -> project_pb.ListProjectVersionsResponse:
+        _identity, token = await self.identity(ctx)
+        listing = await fetch_versions(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.ListProjectVersionsResponse(versions=[convert.version_message(item) for item in listing.items])
+
+    @rpc_errors
+    async def restore_project_version(self, request: project_pb.RestoreProjectVersionRequest, ctx: RequestContext) -> project_pb.RestoreProjectVersionResponse:
+        identity, token = await self.identity(ctx)
+        expected = convert.moment(request.expected_update_time, "expected_update_time")
+        project = await restore_version(self.context, token, project_id(request.project_id, "project_id"), project_id(request.version_id, "version_id"), expected, identity.id)
+        return project_pb.RestoreProjectVersionResponse(project=convert.project_message(project))
+
+
+    @rpc_errors
+    async def create_project_share(self, request: project_pb.CreateProjectShareRequest, ctx: RequestContext) -> project_pb.CreateProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        created = await create_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.CreateProjectShareResponse(token=created.token, share=convert.share_message(created.share))
+
+    @rpc_errors
+    async def get_project_share(self, request: project_pb.GetProjectShareRequest, ctx: RequestContext) -> project_pb.GetProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        state = await read_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.GetProjectShareResponse(share=convert.share_message(state.share))
+
+    @rpc_errors
+    async def delete_project_share(self, request: project_pb.DeleteProjectShareRequest, ctx: RequestContext) -> project_pb.DeleteProjectShareResponse:
+        _identity, token = await self.identity(ctx)
+        await remove_share(self.context, token, project_id(request.project_id, "project_id"))
+        return project_pb.DeleteProjectShareResponse()
+
+    @rpc_errors
+    async def get_shared_project(self, request: project_pb.GetSharedProjectRequest, ctx: RequestContext) -> project_pb.GetSharedProjectResponse:
+        # No identity: the link's token is the credential.
+        shared = await open_shared(self.context, request.token, caller_address(ctx.request_headers, None))
+        return project_pb.GetSharedProjectResponse(project=convert.shared_message(shared))
 
 
 class ReportService(StateBound):
@@ -235,4 +275,8 @@ class AssistantService(StateBound):
     async def interpret(self, request: assistant_pb.InterpretRequest, ctx: RequestContext) -> assistant_pb.InterpretResponse:
         identity, _token = await self.identity(ctx)
         document = InterpretRequest.model_validate(convert.interpret_document(request))
-        return convert.interpretation_message(await interpret(self.context, document, identity.id))
+        context = self.context
+        interpretation = await interpret(context, document, identity.id)
+        for name, value in remaining_header(context, identity.id).items():
+            ctx.response_headers[name] = value
+        return convert.interpretation_message(interpretation)
