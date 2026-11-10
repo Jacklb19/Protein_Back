@@ -10,7 +10,7 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
-from ..assistant import InterpretRequest, interpret
+from ..assistant import InterpretRequest, interpret, remaining_header
 from ..folding import predict
 from ..folding_models import FoldRequest
 from ..config import Settings
@@ -235,4 +235,8 @@ class AssistantService(StateBound):
     async def interpret(self, request: assistant_pb.InterpretRequest, ctx: RequestContext) -> assistant_pb.InterpretResponse:
         identity, _token = await self.identity(ctx)
         document = InterpretRequest.model_validate(convert.interpret_document(request))
-        return convert.interpretation_message(await interpret(self.context, document, identity.id))
+        context = self.context
+        interpretation = await interpret(context, document, identity.id)
+        for name, value in remaining_header(context, identity.id).items():
+            ctx.response_headers[name] = value
+        return convert.interpretation_message(interpretation)

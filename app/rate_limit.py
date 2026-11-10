@@ -39,6 +39,14 @@ class FixedWindowLimiter:
         self._forget_expired(moment)
         return allowed
 
+    def remaining(self, caller: str, now: float | None = None) -> int | None:
+        """Requests the caller may still make in its current window; None when there is no budget."""
+        if self._limit <= 0:
+            return None
+        moment = time.monotonic() if now is None else now
+        started, used = self._windows.get(caller, (moment, 0))
+        return self._limit if moment - started >= self._window else max(0, self._limit - used)
+
     def _forget_expired(self, moment: float) -> None:
         for caller, (started, _) in list(self._windows.items()):
             if moment - started >= self._window:

@@ -14,6 +14,8 @@ API_PREFIX = "/v1"
 SUPABASE_AUTH_PATH = "/auth/v1"
 SUPABASE_STORAGE_PATH = "/storage/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
+# Readings the caller may still ask for in the current minute; absent when the budget is disabled.
+ASSISTANT_REMAINING_HEADER = "X-Assistant-Remaining"
 
 # Request headers that browsers send for Connect and gRPC-Web calls, and gRPC status headers they must read.
 RPC_REQUEST_HEADERS = ("Connect-Protocol-Version", "Connect-Timeout-Ms", "Grpc-Timeout", "X-Grpc-Web", "X-User-Agent")

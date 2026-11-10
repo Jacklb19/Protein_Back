@@ -163,11 +163,30 @@ class AssistantTests(unittest.TestCase):
     def test_one_caller_has_a_budget_and_a_malformed_request_does_not_spend_it(self):
         with self.client(requests_per_minute=1) as client:
             self.assertEqual(self.post(client, {**BODY, "language": "fr"}).status_code, 422)
-            self.assertEqual(self.post(client).status_code, 200)
+            accepted = self.post(client)
+            self.assertEqual(accepted.status_code, 200)
             refused = self.post(client)
+        self.assertEqual(accepted.headers["X-Assistant-Remaining"], "0")
         self.assertEqual(refused.status_code, 429)
         self.assertIn("assistant-rate-limit", refused.text)
         self.assertEqual(len(self.sent), 1)
+
+    def test_remaining_readings_are_reported_and_exposed_to_the_browser_only_with_a_budget(self):
+        with self.client(requests_per_minute=3) as client:
+            first = self.post(client)
+            second = self.post(client, {**BODY, "language": "en"})
+        self.assertEqual([first.headers["X-Assistant-Remaining"], second.headers["X-Assistant-Remaining"]], ["2", "1"])
+        with self.client() as client:
+            self.assertNotIn("X-Assistant-Remaining", self.post(client).headers)
+
+    def test_rpc_reports_the_remaining_readings_in_a_header_the_browser_may_read(self):
+        facts = [Fact(**fact) for fact in BODY["facts"]]
+        binary = InterpretMessage(subject=Subject.LABORATORY, language="es", facts=facts).to_binary()
+        headers = {"Content-Type": "application/grpc-web+proto", "X-Grpc-Web": "1", "Origin": "http://localhost:5173", **TOKEN}
+        with self.client(requests_per_minute=2) as client:
+            web = client.post(f"{ASSISTANT}/Interpret", headers=headers, content=struct.pack(">BI", 0, len(binary)) + binary)
+        self.assertEqual(web.status_code, 200)
+        self.assertEqual(web.headers["X-Assistant-Remaining"], "1")
 
     def test_rpc_matches_rest_over_connect_and_grpc_web(self):
         message = {"subject": "SUBJECT_LABORATORY", "language": "es", "facts": BODY["facts"], "sequence": "MQIFVK"}

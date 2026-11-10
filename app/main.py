@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .config import API_DOCS_PATHS, API_PREFIX, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
+from .config import API_DOCS_PATHS, API_PREFIX, ASSISTANT_REMAINING_HEADER, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
 from .correlation import Correlation
 from .security_headers import SecurityHeaders
 from .identity import CurrentIdentity
@@ -78,7 +78,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER, *RPC_REQUEST_HEADERS],
-        expose_headers=[REQUEST_ID_HEADER, *RPC_RESPONSE_HEADERS],
+        expose_headers=[REQUEST_ID_HEADER, ASSISTANT_REMAINING_HEADER, *RPC_RESPONSE_HEADERS],
     )
     # Outermost, so REST, RPC and CORS answers all carry the request id.
     app.add_middleware(Correlation)
