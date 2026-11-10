@@ -344,10 +344,11 @@ async def fetch_project(context: ServiceContext, token: str, project_id: UUID) -
     return document(await data_request(context, token, "POST", "rpc/pf_project_document", json={"p_id": str(project_id)}))
 
 
-async def remove_project(context: ServiceContext, token: str, project_id: UUID, expected: datetime) -> None:
+async def remove_project(context: ServiceContext, token: str, project_id: UUID, expected: datetime, owner_id: str | None = None) -> None:
     if expected.tzinfo is None:
         raise HTTPException(422, "validation")
     await data_request(context, token, "POST", "rpc/pf_delete_project", json={"p_id": str(project_id), "p_expected_updated_at": expected.isoformat()})
+    context.live_hub.notify(owner_id)
 
 
 @router.get("", response_model=ProjectList)
@@ -360,7 +361,8 @@ async def get_project(project_id: UUID, request: Request, _identity: CurrentIden
     return await fetch_project(context_of(request), token, project_id)
 
 
-async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None) -> Project:
+async def save_project(context: ServiceContext, token: str, payload: ProjectWrite, project_id: UUID | None = None, expected: datetime | None = None, owner_id: str | None = None) -> Project:
+    """Stores the project; `owner_id` lets the owner's live connections in this process hear of it at once."""
     arguments = {
         "p_id": str(project_id) if project_id else None,
         "p_name": payload.name,
@@ -371,20 +373,22 @@ async def save_project(context: ServiceContext, token: str, payload: ProjectWrit
     # Sent only when present, so creates without a key also work before the idempotency migration.
     if isinstance(payload, ProjectCreate) and payload.request_id is not None:
         arguments["p_create_request_id"] = str(payload.request_id)
-    return document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
+    project = document(await data_request(context, token, "POST", "rpc/pf_save_project", json=arguments))
+    context.live_hub.notify(owner_id)
+    return project
 
 
 @router.post("", response_model=Project, status_code=201)
-async def create_project(payload: ProjectCreate, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(context_of(request), token, payload)
+async def create_project(payload: ProjectCreate, request: Request, identity: CurrentIdentity, token: Token):
+    return await save_project(context_of(request), token, payload, owner_id=identity.id)
 
 
 @router.put("/{project_id}", response_model=Project)
-async def update_project(project_id: UUID, payload: ProjectUpdate, request: Request, _identity: CurrentIdentity, token: Token):
-    return await save_project(context_of(request), token, payload, project_id, payload.expected_updated_at)
+async def update_project(project_id: UUID, payload: ProjectUpdate, request: Request, identity: CurrentIdentity, token: Token):
+    return await save_project(context_of(request), token, payload, project_id, payload.expected_updated_at, identity.id)
 
 
 @router.delete("/{project_id}", status_code=204)
-async def delete_project(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token, expected_updated_at: Annotated[datetime, Query(alias="expectedUpdatedAt")]):
-    await remove_project(context_of(request), token, project_id, expected_updated_at)
+async def delete_project(project_id: UUID, request: Request, identity: CurrentIdentity, token: Token, expected_updated_at: Annotated[datetime, Query(alias="expectedUpdatedAt")]):
+    await remove_project(context_of(request), token, project_id, expected_updated_at, identity.id)
     return Response(status_code=204)

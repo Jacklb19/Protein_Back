@@ -133,25 +133,25 @@ class ProjectService(StateBound):
 
     @rpc_errors
     async def create_project(self, request: project_pb.CreateProjectRequest, ctx: RequestContext) -> project_pb.CreateProjectResponse:
-        _identity, token = await self.identity(ctx)
+        identity, token = await self.identity(ctx)
         document = convert.write_document(request.name, request.active_sequence, request.workspace)
         payload = ProjectCreate.model_validate({**document, "requestId": optional_id(request.request_id, "request_id")})
-        project = await save_project(self.context, token, payload)
+        project = await save_project(self.context, token, payload, owner_id=identity.id)
         return project_pb.CreateProjectResponse(project=convert.project_message(project))
 
     @rpc_errors
     async def update_project(self, request: project_pb.UpdateProjectRequest, ctx: RequestContext) -> project_pb.UpdateProjectResponse:
-        _identity, token = await self.identity(ctx)
+        identity, token = await self.identity(ctx)
         expected = convert.moment(request.expected_update_time, "expected_update_time")
         document = convert.write_document(request.name, request.active_sequence, request.workspace)
         payload = ProjectUpdate.model_validate({**document, "expectedUpdatedAt": expected})
-        project = await save_project(self.context, token, payload, project_id(request.id), expected)
+        project = await save_project(self.context, token, payload, project_id(request.id), expected, identity.id)
         return project_pb.UpdateProjectResponse(project=convert.project_message(project))
 
     @rpc_errors
     async def delete_project(self, request: project_pb.DeleteProjectRequest, ctx: RequestContext) -> project_pb.DeleteProjectResponse:
-        _identity, token = await self.identity(ctx)
-        await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"))
+        identity, token = await self.identity(ctx)
+        await remove_project(self.context, token, project_id(request.id), convert.moment(request.expected_update_time, "expected_update_time"), identity.id)
         return project_pb.DeleteProjectResponse()
 
 
