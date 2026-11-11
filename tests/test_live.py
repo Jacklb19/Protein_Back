@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.config import Settings, load_settings
-from app.live import LiveHub, Snapshot
+from app.live import LiveHub, Snapshot, refusal
 from app.live_config import (
     CLOSE_FORBIDDEN, CLOSE_MALFORMED, CLOSE_MESSAGE_TOO_BIG, CLOSE_ROTATE, CLOSE_TIMEOUT, CLOSE_TOO_MANY, CLOSE_TRY_AGAIN_LATER,
     CLOSE_UNAUTHORIZED, CLOSE_UNSUPPORTED_DATA, DEFAULT_LIVE_MAX_CONNECTION_SECONDS, DEFAULT_LIVE_POLL_SECONDS, LIVE_SUBPROTOCOL, LiveLimits,
@@ -111,6 +111,31 @@ class LiveTests(unittest.TestCase):
                     with self.connect(client, origin, subprotocols):
                         self.fail("The handshake was accepted")
         self.assertEqual(self.store.looks, 0)
+
+    def test_health_says_whether_the_channel_is_on(self):
+        with self.client() as client:
+            self.assertTrue(client.get("/v1/health").json()["live"])
+        with self.client(replace(SETTINGS, live_enabled=False)) as client:
+            self.assertFalse(client.get("/v1/health").json()["live"])
+        with self.client(replace(SETTINGS, supabase_anon_key="")) as client:
+            self.assertFalse(client.get("/v1/health").json()["live"])
+
+    def test_subprotocol_offered_only_in_the_header_is_accepted(self):
+        # Some hosts forward the header without parsing it into the ASGI scope.
+        with self.client() as client, client.websocket_connect("/v1/live", headers={"origin": ORIGIN, "sec-websocket-protocol": f"other, {LIVE_SUBPROTOCOL}"}) as socket:
+            self.ready(socket)
+
+    def test_each_refusal_logs_its_reason_and_nothing_the_client_sent(self):
+        self.assertEqual(refusal(replace(SETTINGS, live_enabled=False), ORIGIN, [LIVE_SUBPROTOCOL]), "disabled")
+        self.assertEqual(refusal(replace(SETTINGS, supabase_url=""), ORIGIN, [LIVE_SUBPROTOCOL]), "identity-not-configured")
+        self.assertEqual(refusal(SETTINGS, "https://evil.example", [LIVE_SUBPROTOCOL]), "origin")
+        self.assertEqual(refusal(SETTINGS, ORIGIN, ["other"]), "subprotocol")
+        self.assertIsNone(refusal(SETTINGS, ORIGIN, [LIVE_SUBPROTOCOL]))
+        with self.assertLogs("app.live", level="INFO") as logs, self.client() as client:
+            with self.assertRaises(WebSocketDisconnect):
+                with self.connect(client, "https://evil.example"):
+                    pass
+        self.assertEqual(logs.output, ["INFO:app.live:Live handshake refused: origin"])
 
     def test_first_message_must_authenticate_before_any_data_is_read(self):
         for first, code, reason in [
