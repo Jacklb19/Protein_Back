@@ -124,6 +124,7 @@ class LiveTests(unittest.TestCase):
         # Some hosts forward the header without parsing it into the ASGI scope.
         with self.client() as client, client.websocket_connect("/v1/live", headers={"origin": ORIGIN, "sec-websocket-protocol": f"other, {LIVE_SUBPROTOCOL}"}) as socket:
             self.ready(socket)
+            self.finish(socket)
 
     def test_each_refusal_logs_its_reason_and_nothing_the_client_sent(self):
         self.assertEqual(refusal(replace(SETTINGS, live_enabled=False), ORIGIN, [LIVE_SUBPROTOCOL]), "disabled")
