@@ -1,5 +1,13 @@
 # Contratos de API
 
+## Anotaciones posicionales de una ficha — implementación local del 14 nov 2026
+
+`GET /v1/uniprot/{accession}` y `ReferenceService/GetEntry` añaden `features` y `featuresTruncated` (`Entry.features`, `Entry.features_truncated`). Cada anotación lleva `kind` (sitio activo, unión, sitio, unión a ADN, dedo de zinc, motivo, dominio, región, transmembrana, señal, péptido de tránsito, propéptido, cadena, péptido, puente disulfuro, residuo modificado, glicosilación o variante natural), `description` en el idioma de la fuente (hasta 400 caracteres; para una variante empieza por el cambio, para un sitio de unión por el ligando), `begin`, `end` y `paired` (verdadero cuando nombra dos residuos unidos, no el tramo entre ellos).
+
+- Solo se devuelven anotaciones con los dos extremos exactos y dentro de la secuencia; lo incierto se omite, no se aproxima.
+- Límites: 60 por tipo y 300 en total, ordenadas por tipo y posición; `featuresTruncated` avisa de que la ficha tenía más.
+- Campos aditivos, sin migración ni petición nueva al proveedor: salen de la misma respuesta de UniProt. Orden de publicación: backend, repin del frontend, frontend.
+
 ## Duración y estado de los enlaces de solo lectura — implementación local del 14 nov 2026
 
 Migración `20261114000000_share_duration.sql` (**solo local, sin aplicar**; va después de `20261113000002_mfa_policies.sql`, cuya comprobación de MFA conserva).

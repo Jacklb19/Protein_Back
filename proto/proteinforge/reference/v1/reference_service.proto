@@ -51,6 +51,21 @@ message PdbReference {
   optional string chains = 4;
 }
 
+// A positional annotation of the entry, in UniProt sequence numbering (1-based, inclusive).
+// Only annotations whose two ends are exact and inside the sequence are returned.
+message ProteinFeature {
+  // Stable slug of the UniProt feature type: active-site, binding-site, site, dna-binding, zinc-finger, motif,
+  // domain, region, transmembrane, signal, transit-peptide, propeptide, chain, peptide, disulfide,
+  // modified-residue, glycosylation or variant.
+  string kind = 1;
+  // Text in the source language, at most 400 characters; empty when UniProt gives none.
+  string description = 2;
+  int32 begin = 3;
+  int32 end = 4;
+  // True when the annotation names two residues (a bond) rather than the span between them.
+  bool paired = 5;
+}
+
 message Entry {
   EntrySummary summary = 1;
   string sequence = 2;
@@ -60,6 +75,10 @@ message Entry {
   // Functional annotation in the source language; absent when UniProt has none.
   optional string function = 6;
   repeated PdbReference structures = 7;
+  // At most 300, and at most 60 of one kind, ordered by kind and then by position.
+  repeated ProteinFeature features = 8;
+  // True when the entry had more usable annotations than those limits keep.
+  bool features_truncated = 9;
 }
 
 message SearchEntriesRequest {
