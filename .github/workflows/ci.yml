@@ -34,7 +34,14 @@ jobs:
         with:
           python-version: '3.14'
       - name: Install pinned dependencies
-        run: python -m pip install -r requirements-dev.txt
+        # Every package, transitive ones included, carries hashes; pip refuses anything that does not match.
+        run: python -m pip install --require-hashes -r requirements-dev.txt
+      - name: Check the lockfiles match their inputs
+        run: |
+          python -m pip install uv==0.12.17
+          uv pip compile requirements.in --universal --python-version 3.14 --generate-hashes --quiet -o requirements.txt
+          uv pip compile requirements-dev.in --universal --python-version 3.14 --generate-hashes --quiet -o requirements-dev.txt
+          git diff --exit-code requirements.txt requirements-dev.txt
       - name: Lint Python
         run: python -m ruff check .
       - name: Lint protobuf contracts

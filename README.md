@@ -24,13 +24,13 @@ FastAPI gestiona identidad, autorización, CRUD de proyectos, UniProt acotado e 
 
 ## Desarrollo local
 
-Dependencias fijadas en `requirements.txt` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4, connectrpc 0.12.1, protobuf-py 0.6.0, pyqwest 0.12.0). Generación de código y Hypercorn para gRPC nativo en `requirements-dev.txt`. Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
+Dependencias directas en `requirements.in` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4, connectrpc 0.12.1, protobuf-py 0.6.0, pyqwest 0.12.0, wsproto 1.3.2); `requirements.txt` es su compilación con todas las transitivas y hashes (`uv pip compile`, orden en la cabecera de cada `.in`). Generación de código, Hypercorn para gRPC nativo, ruff y coverage en `requirements-dev.in` → `requirements-dev.txt`. Se edita el `.in` y se recompila; CI comprueba que coinciden e instala con `--require-hashes`. Nunca `pyproject.toml`. Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
 
 Para Vercel, `.python-version` fija 3.14 y la detección FastAPI usa `app/main.py:app`. Configurar `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `ALLOWED_ORIGINS` en las variables del proyecto. Build/instalación/salida del framework sin overrides; no iniciar Uvicorn como comando de build. Ver [FastAPI](https://vercel.com/docs/frameworks/backend/fastapi) y [Python](https://vercel.com/docs/functions/runtimes/python/python-version). Este ajuste no verifica un despliegue remoto.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install --require-hashes -r requirements.txt
 .venv/Scripts/python -m uvicorn app.main:app --reload
 ```
 
