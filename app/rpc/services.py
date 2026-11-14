@@ -18,7 +18,7 @@ from ..context import ServiceContext, context_from_state
 from ..identity import Identity, resolve_identity, token_from_header
 from ..projects import DEFAULT_PAGE_SIZE, MAX_OFFSET, MAX_PAGE_SIZE, ProjectCreate, ProjectUpdate
 from ..projects import fetch_project, fetch_projects, fetch_versions, remove_project, restore_version, save_project
-from ..shares import caller_address, create_share, open_shared, read_share, remove_share
+from ..shares import ShareRequest, caller_address, create_share, open_shared, read_share, remove_share
 from ..project_config import PROJECT_NAME_LENGTH
 from ..report_config import DEFAULT_REPORT_PAGE_SIZE, MAX_REPORT_OFFSET, MAX_REPORT_PAGE_SIZE
 from ..reports import ReportUploadRequest, complete_report, download_report, fetch_reports, remove_report, reserve_report
@@ -173,7 +173,9 @@ class ProjectService(StateBound):
     @rpc_errors
     async def create_project_share(self, request: project_pb.CreateProjectShareRequest, ctx: RequestContext) -> project_pb.CreateProjectShareResponse:
         _identity, token = await self.identity(ctx)
-        created = await create_share(self.context, token, project_id(request.project_id, "project_id"))
+        # 0 is an older client that sends no duration: the default applies.
+        body = ShareRequest.model_validate({"durationDays": request.duration_days} if request.duration_days else {})
+        created = await create_share(self.context, token, project_id(request.project_id, "project_id"), body.duration_days)
         return project_pb.CreateProjectShareResponse(token=created.token, share=convert.share_message(created.share))
 
     @rpc_errors

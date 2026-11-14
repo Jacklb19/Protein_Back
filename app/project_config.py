@@ -2,7 +2,8 @@
 
 PROJECT_NAME_LENGTH = 120
 PROJECT_PREVIEW_RESIDUES = 40
-PROJECT_LIST_RPC = "rpc/pf_list_projects"
+# Listing rows with the expiry of each project's unexpired link (20261114000000_share_duration.sql).
+PROJECT_LIST_RPC = "rpc/pf_list_projects_with_links"
 PROJECT_ORDERS = ("recent", "name")
 DEFAULT_PROJECT_ORDER = PROJECT_ORDERS[0]
 # Projects one account may create; repeated in 20261113000000_project_quota.sql. Accounts already above it
@@ -23,3 +24,5 @@ PROJECT_SHARE_TOKEN_BYTES = 32
 PROJECT_SHARE_TOKEN_PATTERN = r"[A-Za-z0-9_-]{43}"
 PROJECT_SHARE_TOKEN_MAX_LENGTH = 64
 PROJECT_SHARE_LIFETIME_DAYS = 7
+# Durations an owner may choose for a new link, in days; repeated in 20261114000000_share_duration.sql.
+PROJECT_SHARE_DURATIONS_DAYS = (1, PROJECT_SHARE_LIFETIME_DAYS, 30)

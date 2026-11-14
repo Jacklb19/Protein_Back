@@ -97,7 +97,7 @@ class RpcTests(unittest.TestCase):
 
     def test_listing_uses_owner_filter_and_opaque_page_tokens(self):
         def data(request):
-            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects")
+            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects_with_links")
             self.assertNotIn("owner_id", json.loads(request.content))
             row = {"id": PROJECT, "name": "Test", "status": "draft", "created_at": DATE, "updated_at": DATE}
             return httpx.Response(200, json=[row, row])

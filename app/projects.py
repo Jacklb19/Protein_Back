@@ -258,6 +258,8 @@ class ProjectSummary(Contract):
     created_at: str
     updated_at: str
     preview: ProjectPreview | None = None
+    # When the project's read-only link stops working; absent without an unexpired link.
+    share_expires_at: str | None = None
 
 
 class Project(ProjectSummary):

@@ -81,7 +81,7 @@ class ProjectTests(unittest.TestCase):
     def test_listing_has_owner_filter_and_bounded_pagination(self):
         def data(request):
             import json
-            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects")
+            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects_with_links")
             query = json.loads(request.content)
             self.assertEqual(query, {"p_limit": 2, "p_offset": 0, "p_query": "", "p_order": "recent", "p_prefix_length": 40})
             self.assertNotIn("owner_id", query)

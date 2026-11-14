@@ -851,3 +851,59 @@ class PostgresSecurityTests(unittest.TestCase):
         # Accounts without a factor call them at aal1 as before.
         theirs = json.loads(self.sql(f"select public.pf_save_project(null,'Theirs','ACD','{self.snapshot}',null);", self.other).stdout)
         self.assertIn("expiresAt", json.loads(self.sql(f"{self.AAL1} select public.pf_share_project('{theirs['id']}','{'7' * 64}');", self.other).stdout))
+
+    def test_a_link_lasts_the_chosen_days_and_older_clients_keep_seven(self):
+        lasted = {}
+        for days in (1, 7, 30):
+            digest = f"{days:064d}".replace("0", "a")
+            shared = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{digest}',{days});", self.owner).stdout)
+            lasted[days] = self.sql(f"select extract(epoch from ('{shared['expiresAt']}'::timestamptz - '{shared['createdAt']}'::timestamptz)) / 86400;").stdout.strip()
+        self.assertEqual({days: float(value) for days, value in lasted.items()}, {1: 1.0, 7: 7.0, 30: 30.0})
+        default = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{'d' * 64}');", self.owner).stdout)
+        span = self.sql(f"select extract(epoch from ('{default['expiresAt']}'::timestamptz - '{default['createdAt']}'::timestamptz)) / 86400;").stdout.strip()
+        self.assertEqual(float(span), 7.0)
+        for days in ("0", "2", "31", "null", "-1"):
+            with self.subTest(days=days):
+                refused = self.sql(f"select public.pf_share_project('{self.id}','{'e' * 64}',{days});", self.owner, check=False)
+                self.assertIn("Invalid duration", refused.stderr)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{'d' * 64}') is null;", role="anon").stdout.strip(), "f")
+        self.assertNotEqual(self.sql(f"select public.pf_share_project('{self.id}','{'f' * 64}',7);", role="anon", check=False).returncode, 0)
+        self.assertIn("Project not found", self.sql(f"select public.pf_share_project('{self.id}','{'f' * 64}',7);", self.other, check=False).stderr)
+
+    def test_an_enrolled_account_needs_aal2_for_either_form_of_starting_a_link(self):
+        self.enroll(self.owner)
+        for call in (f"select public.pf_share_project('{self.id}','{'1' * 64}',30);", f"select public.pf_share_project('{self.id}','{'1' * 64}');"):
+            with self.subTest(call=call):
+                self.assertIn("MFA required", self.sql(f"{self.AAL1} {call}", self.owner, check=False).stderr)
+                self.assertEqual(self.sql(f"{self.AAL2} {call}", self.owner).returncode, 0)
+
+    def listing_with_links(self, user=None, claims=""):
+        rows = self.sql(f"{claims} select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'expires', l.share_expires_at) order by l.n), '[]') from public.pf_list_projects_with_links(10,0,'','name',40) with ordinality l(id, name, status, created_at, updated_at, preview, share_expires_at, n);", user or self.owner).stdout
+        return json.loads(rows)
+
+    def test_the_listing_says_until_when_each_project_is_shared(self):
+        second = json.loads(self.sql(f"select public.pf_save_project(null,'Another','ACD','{self.snapshot}',null);", self.owner).stdout)
+        expired = json.loads(self.sql(f"select public.pf_save_project(null,'Zeta','ACD','{self.snapshot}',null);", self.owner).stdout)
+        shared = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{'2' * 64}',30);", self.owner).stdout)
+        self.sql(f"select public.pf_share_project('{expired['id']}','{'3' * 64}',1);", self.owner)
+        self.sql(f"update public.project_shares set expires_at = now() - interval '1 second' where project_id = '{expired['id']}';")
+        listing = self.listing_with_links()
+        # Same order as pf_list_projects (by name here); only the unexpired link has a date.
+        self.assertEqual([row["id"] for row in listing], [second["id"], self.id, expired["id"]])
+        self.assertEqual([row["expires"] is not None for row in listing], [False, True, False])
+        stored = self.sql(f"select '{listing[1]['expires']}'::timestamptz = '{shared['expiresAt']}'::timestamptz;").stdout.strip()
+        self.assertEqual(stored, "t")
+        plain = json.loads(self.sql("select coalesce(jsonb_agg(l.id order by l.n), '[]') from public.pf_list_projects(10,0,'','name',40) with ordinality l(id, name, status, created_at, updated_at, preview, n);", self.owner).stdout)
+        self.assertEqual(plain, [row["id"] for row in listing])
+        self.assertEqual(self.listing_with_links(self.other), [])
+        self.assertIn("Invalid project query", self.sql("select * from public.pf_list_projects_with_links(0,0,'','name',40);", self.owner, check=False).stderr)
+        self.assertNotEqual(self.sql("select * from public.pf_list_projects_with_links(10,0,'','name',40);", role="anon", check=False).returncode, 0)
+        # Behind the MFA policies, an enrolled account at aal1 lists nothing, links included.
+        self.enroll(self.owner)
+        self.assertEqual(self.listing_with_links(claims=self.AAL1), [])
+
+    def test_share_duration_migration_is_idempotent(self):
+        self.reapply("20261114000000_share_duration.sql", times=2)
+        overloads = self.sql("select count(*) from pg_proc where proname = 'pf_share_project' and pronamespace = 'public'::regnamespace;").stdout.strip()
+        self.assertEqual(overloads, "2")
+        self.assertIn("expiresAt", self.sql(f"select public.pf_share_project('{self.id}','{'4' * 64}');", self.owner).stdout)
