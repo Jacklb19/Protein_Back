@@ -771,3 +771,83 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(self.spend(), {"allowed": True, "remaining": 1})
         overloads = self.sql("select count(*) from pg_proc where proname in ('pf_spend', 'pf_spend_remaining') and pronamespace = 'public'::regnamespace;").stdout.strip()
         self.assertEqual(overloads, "2")
+
+    AAL1 = """set request.jwt.claims = '{"aal": "aal1"}';"""
+    AAL2 = """set request.jwt.claims = '{"aal": "aal2"}';"""
+
+    def enroll(self, user, status="verified"):
+        self.sql(f"insert into auth.mfa_factors(user_id, status) values ('{user}', '{status}');")
+
+    def test_accounts_without_a_verified_factor_keep_working_at_aal1(self):
+        self.enroll(self.other, "unverified")
+        for user, claims in [(self.owner, ""), (self.owner, self.AAL1), (self.other, self.AAL1)]:
+            with self.subTest(user=user, claims=claims):
+                created = json.loads(self.sql(f"{claims} select public.pf_save_project(null,'Plain','ACD','{self.snapshot}',null);", user).stdout)
+                self.assertEqual(self.sql(f"{claims} select count(*) from public.projects where id='{created['id']}';", user).stdout.strip(), "1")
+        saved = json.loads(self.sql(f"{self.AAL1} select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual(self.sql(f"{self.AAL1} select count(*) from public.project_versions where project_id='{self.id}';", self.owner).stdout.strip(), "1")
+        self.assertEqual(saved["activeSequence"], "ACDE")
+        self.assertEqual(self.reserve()["report"]["status"], "pending")
+
+    def test_an_enrolled_account_needs_aal2_for_every_protected_table(self):
+        digest = "9" * 64
+        self.sql(f"select public.pf_share_project('{self.id}','{digest}');", self.owner)
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner)
+        reserved = self.reserve(project=self.id)
+        self.upload(reserved["objectPath"])
+        self.enroll(self.owner)
+        tables = {
+            "projects": f"id='{self.id}'", "analyses": f"project_id='{self.id}'", "project_versions": f"project_id='{self.id}'",
+            "project_shares": f"project_id='{self.id}'", "reports": f"owner_id='{self.owner}'", "storage.objects": "bucket_id='reports'",
+        }
+        for table, predicate in tables.items():
+            qualified = table if "." in table else f"public.{table}"
+            with self.subTest(table=table):
+                self.assertEqual(self.sql(f"{self.AAL1} select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "0")
+                self.assertEqual(self.sql(f"select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "0")
+                self.assertEqual(self.sql(f"{self.AAL2} select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "1")
+        # Writes through the invoker functions are refused too, without changing anything.
+        current = json.loads(self.sql(f"{self.AAL2} select public.pf_project_document('{self.id}');", self.owner).stdout)
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_project_document('{self.id}') is null;", self.owner).stdout.strip(), "t")
+        refused = self.sql(f"{self.AAL1} select public.pf_save_project(null,'New','ACD','{self.snapshot}',null);", self.owner, check=False)
+        self.assertIn("row-level security", refused.stderr)
+        update = self.sql(f"{self.AAL1} select public.pf_save_project('{self.id}','Changed','ACD','{self.snapshot}','{current['updatedAt']}');", self.owner, check=False)
+        self.assertIn("Project not found", update.stderr)
+        self.assertIn("row-level security", self.sql(f"{self.AAL1} insert into storage.objects(bucket_id,name,owner,metadata) values ('reports','{self.owner}/x.pdf','{self.owner}','{{}}');", self.owner, check=False).stderr)
+        self.assertEqual(self.reports(), [])
+        # At aal2 the same account saves, keeps a version through the definer function and lists its reports.
+        saved = json.loads(self.sql(f"{self.AAL2} select public.pf_save_project('{self.id}','Changed','ACDEF','{self.snapshot}','{current['updatedAt']}');", self.owner).stdout)
+        self.assertEqual(saved["name"], "Changed")
+        self.assertEqual(self.sql(f"{self.AAL2} select count(*) from public.project_versions where project_id='{self.id}';", self.owner).stdout.strip(), "2")
+        listed = json.loads(self.sql(f"{self.AAL2} select coalesce(jsonb_agg(r), '[]'::jsonb) from public.pf_list_reports(51,0,null) r;", self.owner).stdout)
+        self.assertEqual([row["id"] for row in listed], [reserved["report"]["id"]])
+        # Anonymous link reads go through a definer function and never depend on the owner's factors.
+        opened = json.loads(self.sql(f"select public.pf_shared_project('{digest}');", role="anon").stdout)
+        self.assertEqual(opened["name"], "Changed")
+        # Another account is unaffected by this one's enrolment.
+        self.assertEqual(self.sql("select count(*) from public.projects;", self.other).stdout.strip(), "0")
+        self.assertEqual(json.loads(self.sql(f"select public.pf_save_project(null,'Theirs','ACD','{self.snapshot}',null);", self.other).stdout)["name"], "Theirs")
+
+    def test_mfa_policies_are_restrictive_idempotent_and_their_check_is_not_public(self):
+        self.reapply("20261113000002_mfa_policies.sql", times=2)
+        policies = self.sql("select count(*) from pg_policies where policyname like 'Require MFA once enrolled%' and permissive = 'RESTRICTIVE' and roles = '{authenticated}';").stdout.strip()
+        self.assertEqual(policies, "6")
+        self.assertEqual(self.sql("select has_function_privilege('anon', 'public.pf_session_meets_mfa()', 'execute');").stdout.strip(), "f")
+        self.enroll(self.owner)
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_session_meets_mfa();", self.owner).stdout.strip(), "f")
+        self.assertEqual(self.sql(f"{self.AAL2} select public.pf_session_meets_mfa();", self.owner).stdout.strip(), "t")
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_session_meets_mfa();", self.other).stdout.strip(), "t")
+
+    def test_definer_functions_that_write_for_the_caller_also_need_aal2_once_enrolled(self):
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner)
+        version = self.sql(f"select id from public.project_versions where project_id='{self.id}';").stdout.strip()
+        self.enroll(self.owner)
+        for call in [f"select public.pf_share_project('{self.id}','{'8' * 64}');", f"select public.pf_unshare_project('{self.id}');",
+                     f"select public.pf_keep_project_version('{self.id}','{version}');"]:
+            with self.subTest(call=call.split("(")[0]):
+                self.assertIn("MFA required", self.sql(f"{self.AAL1} {call}", self.owner, check=False).stderr)
+                self.assertEqual(self.sql(f"{self.AAL2} {call}", self.owner).returncode, 0)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{'8' * 64}') is null;", role="anon").stdout.strip(), "t")
+        # Accounts without a factor call them at aal1 as before.
+        theirs = json.loads(self.sql(f"select public.pf_save_project(null,'Theirs','ACD','{self.snapshot}',null);", self.other).stdout)
+        self.assertIn("expiresAt", json.loads(self.sql(f"{self.AAL1} select public.pf_share_project('{theirs['id']}','{'7' * 64}');", self.other).stdout))
