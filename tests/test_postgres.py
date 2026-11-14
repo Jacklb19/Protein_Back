@@ -643,3 +643,66 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(self.reserve()['report']['status'], 'pending')
         for function in ["public.pf_report_object(gen_random_uuid())", "public.pf_complete_report(gen_random_uuid())", "public.pf_delete_report(gen_random_uuid())"]:
             self.assertNotEqual(self.sql(f"select {function};", role='anon', check=False).returncode, 0)
+
+    def create_projects(self, count, user=None):
+        # Rows straight away in one session; each create still runs pf_save_project and its insert trigger.
+        self.sql(f"select count(public.pf_save_project(null,'Bulk '||g,'ACD','{self.snapshot}',null)) from generate_series(1,{count}) g;", user or self.owner)
+
+    def project_count(self, user):
+        return int(self.sql(f"select count(*) from public.projects where owner_id='{user}';").stdout.strip())
+
+    def test_project_quota_refuses_the_fifty_first_create_but_never_an_update(self):
+        key = str(uuid4())
+        self.keyed_create(key)
+        self.create_projects(48)
+        self.assertEqual(self.project_count(self.owner), 50)
+        refused = self.sql(f"select public.pf_save_project(null,'Extra','ACD','{self.snapshot}',null);", self.owner, check=False)
+        self.assertIn("Project quota exceeded", refused.stderr)
+        self.assertEqual(self.project_count(self.owner), 50)
+        # A retried create with a stored request id is the same project, not a new one.
+        self.assertEqual(self.keyed_create(key).returncode, 0)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+        # A direct insert under RLS meets the same quota.
+        direct = self.sql(f"insert into public.projects(owner_id,name,active_sequence) values ('{self.owner}','Direct','ACD');", self.owner, check=False)
+        self.assertIn("Project quota exceeded", direct.stderr)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Still editable','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual(saved["name"], "Still editable")
+        # The quota is per account, and deleting a project frees a place.
+        self.assertEqual(self.keyed_create(str(uuid4()), user=self.other).returncode, 0)
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.owner)
+        self.assertEqual(self.keyed_create(str(uuid4())).returncode, 0)
+
+    def test_accounts_above_the_quota_keep_and_edit_their_projects(self):
+        # Rows from before the quota: replica mode skips the insert trigger, as if they predated it.
+        self.sql(f"set session_replication_role = replica; insert into public.projects(owner_id,name,active_sequence) select '{self.owner}','Old '||g,'ACD' from generate_series(1,54) g;")
+        self.assertEqual(self.project_count(self.owner), 55)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Kept','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual((saved["name"], saved["activeSequence"]), ("Kept", "ACDE"))
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.owner)
+        self.assertEqual(self.project_count(self.owner), 54)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+
+    def test_two_simultaneous_creates_cannot_both_take_the_last_place(self):
+        self.create_projects(48)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda name: self.keyed_create(str(uuid4()), name=name, check=False), ["First", "Second"]))
+        self.assertEqual(sum(result.returncode == 0 for result in results), 1, [result.stderr for result in results])
+        self.assertIn("Project quota exceeded", next(result.stderr for result in results if result.returncode != 0))
+        self.assertEqual(self.project_count(self.owner), 50)
+        # Two creates with the same request id at the limit: both answer with the one stored project.
+        self.sql(f"select public.pf_delete_project(id, updated_at) from public.projects where owner_id='{self.owner}' and name in ('First','Second');", self.owner)
+        key = str(uuid4())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            same = list(executor.map(lambda name: self.keyed_create(key, name=name, check=False), ["First", "Second"]))
+        self.assertEqual([result.returncode for result in same], [0, 0], [result.stderr for result in same])
+        self.assertEqual(len({json.loads(result.stdout)["id"] for result in same}), 1)
+
+    def test_project_quota_migration_is_idempotent_and_its_trigger_is_not_callable(self):
+        self.reapply("20261113000000_project_quota.sql", times=2)
+        triggers = self.sql("select count(*) from pg_trigger where tgrelid='public.projects'::regclass and tgname='pf_project_quota';").stdout.strip()
+        self.assertEqual(triggers, "1")
+        callable_by = self.sql("select has_function_privilege('authenticated', 'public.pf_project_before_insert_quota()', 'execute') or has_function_privilege('anon', 'public.pf_project_before_insert_quota()', 'execute');").stdout.strip()
+        self.assertEqual(callable_by, "f")
+        self.create_projects(49)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)

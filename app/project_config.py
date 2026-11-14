@@ -5,6 +5,12 @@ PROJECT_PREVIEW_RESIDUES = 40
 PROJECT_LIST_RPC = "rpc/pf_list_projects"
 PROJECT_ORDERS = ("recent", "name")
 DEFAULT_PROJECT_ORDER = PROJECT_ORDERS[0]
+# Projects one account may create; repeated in 20261113000000_project_quota.sql. Accounts already above it
+# keep and edit what they have; only a new project is refused.
+PROJECT_LIMIT = 50
+# Fixed message of pf_project_before_insert_quota; never contains submitted data.
+PROJECT_QUOTA_MESSAGE = "Project quota exceeded"
+PROJECT_QUOTA_CODE = "project-quota-exceeded"
 # Earlier contents kept per project; repeated in 20261110000000_project_versions.sql.
 PROJECT_VERSION_LIMIT = 5
 PROJECT_VERSIONS_RPC = "rpc/pf_list_project_versions"

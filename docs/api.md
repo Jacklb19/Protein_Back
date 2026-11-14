@@ -1,5 +1,12 @@
 # Contratos de API
 
+## Cuota de proyectos por cuenta — implementación local del 13 nov 2026
+
+Migración `20261113000000_project_quota.sql` (**solo local, sin aplicar en Supabase**). Cada cuenta puede crear hasta 50 proyectos (`PROJECT_LIMIT` en `app/project_config.py`, repetido en la migración y comprobado por prueba). Un disparador `before insert` en `projects` cuenta bajo un bloqueo consultivo por propietario, como la cuota de informes, así que dos creaciones simultáneas no ocupan a la vez la última plaza. Afecta a `pf_save_project` y a cualquier inserción directa; nunca a actualizaciones: una cuenta que ya supere el límite conserva y edita sus proyectos, y borrar uno libera una plaza. Repetir una creación con un `requestId` ya guardado devuelve ese proyecto aunque la cuenta esté en el límite.
+
+- `POST /v1/projects`: 413 `project-quota-exceeded`. `ProjectService/CreateProject`: `RESOURCE_EXHAUSTED` con el mismo mensaje. El mensaje SQL es fijo (`Project quota exceeded`) y no lleva datos.
+- El frontend lo traduce a `project-quota` y lo muestra donde ya muestra los errores de guardado; la cola sin conexión no lo reintenta. Un frontend anterior lo vería como límite de consultas y lo reintentaría tres veces antes de dejarlo a la persona.
+
 ## Enlaces de solo lectura — implementación local del 11 nov 2026
 
 Migración `20261111000000_project_shares.sql` (**solo local, sin aplicar en Supabase**). Un enlace por proyecto; caduca a los 7 días (`PROJECT_SHARE_LIFETIME_DAYS`, repetido en la migración y comprobado por prueba).
