@@ -18,8 +18,8 @@ from .identity import CurrentIdentity, bearer_token
 from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
 from .laboratory import LaboratorySnapshot, laboratory_document
 from .project_config import (
-    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT,
-    PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
+    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_QUOTA_CODE, PROJECT_QUOTA_MESSAGE,
+    PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT, PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
 )
 
 logger = logging.getLogger(__name__)
@@ -326,6 +326,9 @@ async def data_request(context: ServiceContext, token: str | None, method: str, 
             if message == REQUIRES_CURRENT_CLIENT_MESSAGE:
                 raise HTTPException(409, "project-requires-current-client")
             raise HTTPException(409, "project-conflict")
+        if code == "PT413" and message == PROJECT_QUOTA_MESSAGE:
+            # Same status and RPC code (RESOURCE_EXHAUSTED) as the report quota; the detail tells them apart.
+            raise HTTPException(413, PROJECT_QUOTA_CODE)
         if code == "PT422":
             raise HTTPException(422, "validation")
         if code == "PT404":
