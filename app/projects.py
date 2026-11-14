@@ -278,6 +278,8 @@ class ProjectVersion(Contract):
     id: UUID
     saved_at: str
     preview: ProjectPreview | None = None
+    # Whether its sequence equals the one stored now, compared in full; absent from older servers.
+    same_sequence: bool | None = None
 
 
 class ProjectVersionList(Contract):

@@ -907,3 +907,24 @@ class PostgresSecurityTests(unittest.TestCase):
         overloads = self.sql("select count(*) from pg_proc where proname = 'pf_share_project' and pronamespace = 'public'::regnamespace;").stdout.strip()
         self.assertEqual(overloads, "2")
         self.assertIn("expiresAt", self.sql(f"select public.pf_share_project('{self.id}','{'4' * 64}');", self.owner).stdout)
+    def compared_versions(self, user=None):
+        return json.loads(self.sql(f"select public.pf_list_project_versions_compared('{self.id}',40);", user or self.owner).stdout)
+
+    def test_versions_say_whether_their_sequence_is_the_current_one(self):
+        renamed = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        back = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Study','ACD','{self.snapshot}','{renamed['updatedAt']}');", self.owner).stdout)
+        # Versions newest first: ACDE (differs from the current ACD), then ACD (the same).
+        versions = self.compared_versions()
+        self.assertEqual([(version["preview"]["sequenceLength"], version["sameSequence"]) for version in versions], [(4, False), (3, True)])
+        plain = json.loads(self.sql(f"select public.pf_list_project_versions('{self.id}',40);", self.owner).stdout)
+        self.assertEqual([version["id"] for version in plain], [version["id"] for version in versions])
+        self.assertNotIn("activeSequence", json.dumps(versions))
+        self.assertEqual(self.compared_versions(self.other), [])
+        self.assertNotEqual(self.sql(f"select public.pf_list_project_versions_compared('{self.id}',40);", role="anon", check=False).returncode, 0)
+        # The comparison follows the current content: after saving ACDE again the first version matches it.
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{back['updatedAt']}');", self.owner)
+        self.assertEqual([version["sameSequence"] for version in self.compared_versions()], [False, True, False])
+
+    def test_version_changes_migration_is_idempotent(self):
+        self.reapply("20261114000001_version_changes.sql", times=2)
+        self.assertEqual(self.compared_versions(), [])

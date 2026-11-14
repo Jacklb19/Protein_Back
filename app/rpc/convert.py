@@ -299,7 +299,7 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
 
 
 def version_message(version: VersionModel) -> project_pb.ProjectVersion:
-    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview))
+    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview), same_sequence=version.same_sequence)
 
 
 def share_message(share) -> project_pb.ProjectShare | None:

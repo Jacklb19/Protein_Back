@@ -34,6 +34,9 @@ Migración `20261113000000_project_quota.sql` (**solo local, sin aplicar en Supa
 
 - `POST /v1/projects`: 413 `project-quota-exceeded`. `ProjectService/CreateProject`: `RESOURCE_EXHAUSTED` con el mismo mensaje. El mensaje SQL es fijo (`Project quota exceeded`) y no lleva datos.
 - El frontend lo traduce a `project-quota` y lo muestra donde ya muestra los errores de guardado; la cola sin conexión no lo reintenta. Un frontend anterior lo vería como límite de consultas y lo reintentaría tres veces antes de dejarlo a la persona.
+## Versiones comparadas con la actual — implementación local del 14 nov 2026
+
+Migración `20261114000001_version_changes.sql` (**solo local, sin aplicar**). Cada versión anterior lleva `sameSequence` (REST) / `ProjectVersion.same_sequence` (RPC, `optional`): si su secuencia es idéntica a la guardada ahora, comparada entera en SQL porque la vista previa solo trae un prefijo. Sale de la función nueva `pf_list_project_versions_compared` (invoker, RLS del propietario); no se añade a `pf_list_project_versions` porque la API publicada rechaza campos desconocidos. Sin servidor nuevo el campo queda sin valor y el cliente no afirma nada sobre la secuencia. Orden: migración, backend, repin, frontend.
 
 ## Enlaces de solo lectura — implementación local del 11 nov 2026
 

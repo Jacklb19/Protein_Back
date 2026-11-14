@@ -14,7 +14,8 @@ PROJECT_QUOTA_MESSAGE = "Project quota exceeded"
 PROJECT_QUOTA_CODE = "project-quota-exceeded"
 # Earlier contents kept per project; repeated in 20261110000000_project_versions.sql.
 PROJECT_VERSION_LIMIT = 5
-PROJECT_VERSIONS_RPC = "rpc/pf_list_project_versions"
+# Versions with whether each sequence equals the current one (20261114000001_version_changes.sql).
+PROJECT_VERSIONS_RPC = "rpc/pf_list_project_versions_compared"
 PROJECT_RESTORE_RPC = "rpc/pf_restore_project_version"
 # Fixed message of pf_restore_project_version; never contains submitted data.
 VERSION_NOT_FOUND_MESSAGE = "Version not found"

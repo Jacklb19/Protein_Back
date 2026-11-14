@@ -212,6 +212,8 @@ message ProjectVersion {
   // When this content was saved.
   google.protobuf.Timestamp save_time = 2;
   ProjectPreview preview = 3;
+  // Whether its sequence equals the project's current one, compared in full; unset from older servers.
+  optional bool same_sequence = 4;
 }
 
 message ListProjectVersionsRequest {
