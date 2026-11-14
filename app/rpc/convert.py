@@ -271,6 +271,7 @@ def summary_message(summary: SummaryModel) -> project_pb.ProjectSummary:
         create_time=timestamp(summary.created_at),
         update_time=timestamp(summary.updated_at),
         preview=preview_message(preview),
+        share_expire_time=timestamp(summary.share_expires_at),
     )
 
 

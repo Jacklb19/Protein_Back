@@ -1,5 +1,13 @@
 # Contratos de API
 
+## Duración y estado de los enlaces de solo lectura — implementación local del 14 nov 2026
+
+Migración `20261114000000_share_duration.sql` (**solo local, sin aplicar**; va después de `20261113000002_mfa_policies.sql`, cuya comprobación de MFA conserva).
+
+- Crear un enlace acepta una duración de 1, 7 o 30 días (`PROJECT_SHARE_DURATIONS_DAYS`, repetida en la migración y comprobada por prueba): `POST /v1/projects/{id}/share` con `{"durationDays"}` y `CreateProjectShareRequest.duration_days`. Sin duración (cuerpo vacío o 0 en RPC) siguen siendo 7 días; cualquier otra es 422 / `INVALID_ARGUMENT` sin llegar a la base. En SQL, `pf_share_project(uuid, text, integer)` y la forma de dos argumentos delega con 7.
+- El listado lleva la caducidad del enlace activo: `shareExpiresAt` en REST y `ProjectSummary.share_expire_time` en RPC, ausente si no hay enlace o caducó. Sale de la función nueva `pf_list_projects_with_links`, que reutiliza `pf_list_projects` y su orden: una columna nueva en la función actual rompería la API publicada, que rechaza campos desconocidos.
+- Orden de publicación: migración, backend, repin del frontend, frontend.
+
 ## MFA en RLS — implementación local del 13 nov 2026
 
 Migración `20261113000002_mfa_policies.sql` (**solo local, sin aplicar en Supabase**). Variante opt-in de la guía MFA de Supabase: una sesión necesita `aal2` solo si su cuenta tiene un factor `verified`; sin factor (o con uno sin verificar) todo sigue igual en `aal1`. Políticas `as restrictive` para `authenticated` en `projects`, `analyses`, `reports`, `project_versions`, `project_shares` y `storage.objects` del bucket `reports`; no conceden nada, solo estrechan las políticas del propietario. La comprobación vive en `pf_session_meets_mfa()` (`security definer`), para no depender de que `authenticated` pueda leer `auth.mfa_factors`; un JWT sin `aal` cuenta como `aal1`.

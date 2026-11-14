@@ -54,7 +54,7 @@ class ShareTests(unittest.TestCase):
         self.assertNotEqual(token, second.json()["token"])
         path, body, authorization = self.sent[0]
         self.assertEqual(path, "/rest/v1/rpc/pf_share_project")
-        self.assertEqual(body, {"p_id": PROJECT, "p_token_sha256": hashlib.sha256(token.encode()).hexdigest()})
+        self.assertEqual(body, {"p_id": PROJECT, "p_token_sha256": hashlib.sha256(token.encode()).hexdigest(), "p_days": project_config.PROJECT_SHARE_LIFETIME_DAYS})
         self.assertNotIn(token, json.dumps(body))
         self.assertEqual(authorization, "Bearer user-token")
         self.assertEqual(first.json()["share"]["expiresAt"], "2026-11-17T08:00:00.123456Z")

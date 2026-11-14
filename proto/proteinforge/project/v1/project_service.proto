@@ -79,6 +79,8 @@ message ProjectSummary {
   google.protobuf.Timestamp update_time = 5;
   // Optional for compatibility with older servers and stored projects.
   ProjectPreview preview = 6;
+  // When the project's read-only link stops working; absent without an unexpired link.
+  google.protobuf.Timestamp share_expire_time = 7;
 }
 
 // Saved evidence only. An absent result was not calculated or does not match its inputs.
@@ -239,6 +241,8 @@ message ProjectShare {
 
 message CreateProjectShareRequest {
   string project_id = 1;
+  // Days the link lasts: 1, 7 or 30. Unset (0) keeps the default of 7; any other value is INVALID_ARGUMENT.
+  int32 duration_days = 2;
 }
 
 message CreateProjectShareResponse {
