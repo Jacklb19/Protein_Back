@@ -137,11 +137,11 @@ class FoldingTests(unittest.TestCase):
             with patch('app.folding._exchange', stalled), patch('app.folding.FOLDING_TIMEOUT_SECONDS', .01):
                 from fastapi import HTTPException
                 with self.assertRaises(HTTPException) as failure:
-                    await predict(state, body, 'a')
+                    await predict(state, body, 'a', 'token')
                 self.assertEqual(failure.exception.status_code, 504)
                 self.assertFalse(state.folding_gate._active)
             with patch('app.folding._exchange', stalled):
-                task = asyncio.create_task(predict(state, body, 'b'))
+                task = asyncio.create_task(predict(state, body, 'b', 'token'))
                 await asyncio.sleep(0)
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):

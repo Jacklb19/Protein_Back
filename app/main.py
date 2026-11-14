@@ -28,6 +28,7 @@ from .live import LiveHub, router as live_router
 from .shares import router as shares_router
 from .rpc.router import RpcRouter, rpc_applications
 from .rate_limit import FixedWindowLimiter
+from .spend_config import DAY_SECONDS
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
 
 API_TITLE = "ProteinForge API"
@@ -65,9 +66,11 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
     docs = API_DOCS_PATHS if resolved.api_docs_enabled else dict.fromkeys(API_DOCS_PATHS)
     app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan, **docs)
     app.state.settings = resolved
-    # Shared by REST and RPC: one budget per signed-in caller for the queries this process forwards.
+    # Shared by REST and RPC: one budget per signed-in caller. With SHARED_BUDGET_ENABLED PostgreSQL counts it
+    # (app/spend.py) and these per-process counters only decide while the database cannot answer.
     app.state.uniprot_limiter = FixedWindowLimiter(resolved.uniprot_requests_per_minute)
     app.state.assistant_limiter = FixedWindowLimiter(resolved.assistant_requests_per_minute)
+    app.state.assistant_daily_limiter = FixedWindowLimiter(resolved.assistant_requests_per_day, DAY_SECONDS, max_callers=1)
     app.state.assistant_cache = AssistantCache(resolved.assistant_cache_ttl_seconds, resolved.assistant_cache_max_entries)
     app.state.sifts_cache = SiftsCache()
     app.state.folding_gate = FoldingGate()
