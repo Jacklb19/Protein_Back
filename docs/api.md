@@ -1,5 +1,9 @@
 # Contratos de API
 
+## Versiones comparadas con la actual — implementación local del 14 nov 2026
+
+Migración `20261114000001_version_changes.sql` (**solo local, sin aplicar**). Cada versión anterior lleva `sameSequence` (REST) / `ProjectVersion.same_sequence` (RPC, `optional`): si su secuencia es idéntica a la guardada ahora, comparada entera en SQL porque la vista previa solo trae un prefijo. Sale de la función nueva `pf_list_project_versions_compared` (invoker, RLS del propietario); no se añade a `pf_list_project_versions` porque la API publicada rechaza campos desconocidos. Sin servidor nuevo el campo queda sin valor y el cliente no afirma nada sobre la secuencia. Orden: migración, backend, repin, frontend.
+
 ## Enlaces de solo lectura — implementación local del 11 nov 2026
 
 Migración `20261111000000_project_shares.sql` (**solo local, sin aplicar en Supabase**). Un enlace por proyecto; caduca a los 7 días (`PROJECT_SHARE_LIFETIME_DAYS`, repetido en la migración y comprobado por prueba).
