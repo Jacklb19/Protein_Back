@@ -42,6 +42,12 @@ jobs:
           uv pip compile requirements.in --universal --python-version 3.14 --generate-hashes --quiet -o requirements.txt
           uv pip compile requirements-dev.in --universal --python-version 3.14 --generate-hashes --quiet -o requirements-dev.txt
           git diff --exit-code requirements.txt requirements-dev.txt
+      - name: Audit dependencies for known vulnerabilities
+        # Separate environment, so the audit tool never mixes with the locked set it inspects.
+        run: |
+          python -m venv "$RUNNER_TEMP/audit"
+          "$RUNNER_TEMP/audit/bin/python" -m pip install pip-audit==2.10.1
+          "$RUNNER_TEMP/audit/bin/pip-audit" --strict --require-hashes --disable-pip -r requirements.txt -r requirements-dev.txt
       - name: Lint Python
         run: python -m ruff check .
       - name: Lint protobuf contracts
