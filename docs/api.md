@@ -1,5 +1,13 @@
 # Contratos de API
 
+## MFA en RLS — implementación local del 13 nov 2026
+
+Migración `20261113000002_mfa_policies.sql` (**solo local, sin aplicar en Supabase**). Variante opt-in de la guía MFA de Supabase: una sesión necesita `aal2` solo si su cuenta tiene un factor `verified`; sin factor (o con uno sin verificar) todo sigue igual en `aal1`. Políticas `as restrictive` para `authenticated` en `projects`, `analyses`, `reports`, `project_versions`, `project_shares` y `storage.objects` del bucket `reports`; no conceden nada, solo estrechan las políticas del propietario. La comprobación vive en `pf_session_meets_mfa()` (`security definer`), para no depender de que `authenticated` pueda leer `auth.mfa_factors`; un JWT sin `aal` cuenta como `aal1`.
+
+- Las funciones `security definer` saltan RLS, así que `pf_share_project`, `pf_unshare_project` y `pf_keep_project_version` se redefinen con la misma comprobación (`PT401 MFA required`); sin ella, una sesión `aal1` de una cuenta con factor podría crear un enlace y leer su proyecto sin sesión. `pf_shared_project` (anónima) y `pf_spend` (solo el propio presupuesto) no la necesitan.
+- La API ya rechaza esas sesiones antes (`mfa-required`, `app/identity.py`); esto cubre las llamadas directas a PostgREST y Storage con la clave pública.
+- Sin comprobar contra Supabase real: que `postgres` (dueño de la función) pueda leer `auth.mfa_factors` y que `auth.jwt()` lleve `aal`. Las pruebas emulan ambos en `tests/postgres_bootstrap.sql`.
+
 ## Presupuesto compartido — implementación local del 13 nov 2026
 
 Migración `20261113000001_shared_budget.sql` (**solo local, sin aplicar en Supabase**) y `SHARED_BUDGET_ENABLED=enabled` (apagado por omisión). Con la bandera, PostgreSQL es la fuente de verdad del presupuesto por cuenta del asistente, UniProt (búsqueda, ficha y mapeo de residuos) y predicción: `pf_spend` cuenta una ventana por cuenta y ámbito en una sola sentencia atómica (la ventana empieza con la primera petición, como el contador anterior) y, si se pide, una ventana común a todos. La API la llama con el JWT de quien pide y la clave pública: cobra a `auth.uid()` y a nadie más. Tabla `spend_windows` privada (sin permisos ni políticas; solo las funciones `security definer`).

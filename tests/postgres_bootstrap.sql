@@ -29,3 +29,14 @@ grant usage on schema storage to anon, authenticated;
 grant select, insert, update, delete on storage.objects to anon, authenticated;
 grant select on storage.buckets to anon, authenticated;
 grant execute on function storage.foldername(text) to anon, authenticated;
+-- Minimal emulation of what the MFA policies read (20261113000002): the JWT claims and verified factors.
+-- auth.jwt() matches Supabase's definition; tests set request.jwt.claims to {"aal": "aal1" | "aal2"}.
+create function auth.jwt() returns jsonb language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claim', true), ''), nullif(current_setting('request.jwt.claims', true), ''))::jsonb;
+$$;
+grant execute on function auth.jwt() to anon, authenticated;
+create type auth.factor_status as enum ('unverified', 'verified');
+create table auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
+  factor_type text not null default 'totp', status auth.factor_status not null, created_at timestamptz default now()
+);
