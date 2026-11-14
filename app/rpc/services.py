@@ -92,11 +92,11 @@ class FoldingService(StateBound):
             # The RPC context reports the remaining client budget, including
             # authentication; the provider still keeps its own 30-second bound.
             async with asyncio.timeout(None if remaining is None else remaining / 1000):
-                identity, _token = await self.identity(ctx)
+                identity, token = await self.identity(ctx)
                 body = FoldRequest(sequence=request.sequence, consent_to_send_sequence=request.consent_to_send_sequence)
                 if ctx.timeout_ms is not None and ctx.timeout_ms <= 0:
                     raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout")
-                result = await predict(self._state, body, identity.id)
+                result = await predict(self._state, body, identity.id, token)
                 if ctx.timeout_ms is not None and ctx.timeout_ms <= 0:
                     raise ConnectError(Code.DEADLINE_EXCEEDED, "folding-timeout")
         except TimeoutError as error:
@@ -245,8 +245,8 @@ class ReportService(StateBound):
 class ReferenceService(StateBound):
     @rpc_errors
     async def search_entries(self, request: reference_pb.SearchEntriesRequest, ctx: RequestContext) -> reference_pb.SearchEntriesResponse:
-        identity, _token = await self.identity(ctx)
-        result = await search_entries(self.context, request.query, identity.id)
+        identity, token = await self.identity(ctx)
+        result = await search_entries(self.context, request.query, identity.id, token)
         return reference_pb.SearchEntriesResponse(
             entries=[convert.entry_summary_message(item) for item in result.items],
             limit=UNIPROT_SEARCH_SIZE,
@@ -256,13 +256,13 @@ class ReferenceService(StateBound):
 
     @rpc_errors
     async def get_entry(self, request: reference_pb.GetEntryRequest, ctx: RequestContext) -> reference_pb.GetEntryResponse:
-        identity, _token = await self.identity(ctx)
-        return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession, identity.id)))
+        identity, token = await self.identity(ctx)
+        return reference_pb.GetEntryResponse(entry=convert.entry_message(await fetch_entry(self.context, request.accession, identity.id, token)))
 
     @rpc_errors
     async def get_residue_mapping(self, request: reference_pb.GetResidueMappingRequest, ctx: RequestContext) -> reference_pb.GetResidueMappingResponse:
-        identity, _token = await self.identity(ctx)
-        result = await get_residue_mapping(self.context, request.pdb_id, request.accession, request.sequence_version, identity.id)
+        identity, token = await self.identity(ctx)
+        result = await get_residue_mapping(self.context, request.pdb_id, request.accession, request.sequence_version, identity.id, token)
         message = convert.residue_mapping_message(result)
         # JSON/REST and binary are checked separately, including their full envelope.
         if len(message.to_binary()) > MAPPING_RESPONSE_MAX_BYTES or len(message.to_json().encode('utf-8')) > MAPPING_RESPONSE_MAX_BYTES:
@@ -273,10 +273,9 @@ class ReferenceService(StateBound):
 class AssistantService(StateBound):
     @rpc_errors
     async def interpret(self, request: assistant_pb.InterpretRequest, ctx: RequestContext) -> assistant_pb.InterpretResponse:
-        identity, _token = await self.identity(ctx)
+        identity, token = await self.identity(ctx)
         document = InterpretRequest.model_validate(convert.interpret_document(request))
-        context = self.context
-        interpretation = await interpret(context, document, identity.id)
-        for name, value in remaining_header(context, identity.id).items():
+        interpretation, left = await interpret(self.context, document, identity.id, token)
+        for name, value in remaining_header(left).items():
             ctx.response_headers[name] = value
         return convert.interpretation_message(interpretation)

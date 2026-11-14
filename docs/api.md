@@ -1,5 +1,17 @@
 # Contratos de API
 
+## Presupuesto compartido — implementación local del 13 nov 2026
+
+Migración `20261113000001_shared_budget.sql` (**solo local, sin aplicar en Supabase**) y `SHARED_BUDGET_ENABLED=enabled` (apagado por omisión). Con la bandera, PostgreSQL es la fuente de verdad del presupuesto por cuenta del asistente, UniProt (búsqueda, ficha y mapeo de residuos) y predicción: `pf_spend` cuenta una ventana por cuenta y ámbito en una sola sentencia atómica (la ventana empieza con la primera petición, como el contador anterior) y, si se pide, una ventana común a todos. La API la llama con el JWT de quien pide y la clave pública: cobra a `auth.uid()` y a nadie más. Tabla `spend_windows` privada (sin permisos ni políticas; solo las funciones `security definer`).
+
+- Asistente: `ASSISTANT_REQUESTS_PER_MINUTE` por cuenta y `ASSISTANT_REQUESTS_PER_DAY` para todas las cuentas juntas en 24 h (0 = sin tope, valor por omisión). Un acierto de caché no gasta y `X-Assistant-Remaining` se lee con `pf_spend_remaining`; las consultas inválidas se rechazan antes de gastar.
+- UniProt: `UNIPROT_REQUESTS_PER_MINUTE` por cuenta. Predicción: 1 por minuto por cuenta y 3 por minuto en total, ahora entre instancias; la puerta en memoria de una petición a la vez se mantiene.
+- Techos en SQL (60, 120 y 3 por ventana; 100000 para la ventana común): quien llame a `pf_spend` directamente solo gasta su presupuesto y no puede inflar la ventana común por encima de ese ritmo. Un valor de entorno mayor se recorta al techo.
+- **Si la base no responde** (red, tiempo, migración sin aplicar, respuesta inesperada), cada proceso decide con sus contadores en memoria, como antes, y lo registra sin datos. Decisión explícita: no se falla cerrado porque los proveedores son públicos y gratuitos con sus propios límites, el contador en memoria sigue acotando cada instancia y una caída de la base apagaría el asistente, UniProt y la predicción para todos. Un token inválido nunca es respaldo: sigue siendo 401.
+- El límite por dirección de `/v1/shared` sigue en memoria.
+
+Orden de activación: aplicar la migración, definir `SHARED_BUDGET_ENABLED=enabled` (y, si se quiere, `ASSISTANT_REQUESTS_PER_DAY`) en Vercel y redesplegar. Las filas de cuentas borradas quedan (una por ámbito, sin datos personales salvo el identificador).
+
 ## Cuota de proyectos por cuenta — implementación local del 13 nov 2026
 
 Migración `20261113000000_project_quota.sql` (**solo local, sin aplicar en Supabase**). Cada cuenta puede crear hasta 50 proyectos (`PROJECT_LIMIT` en `app/project_config.py`, repetido en la migración y comprobado por prueba). Un disparador `before insert` en `projects` cuenta bajo un bloqueo consultivo por propietario, como la cuota de informes, así que dos creaciones simultáneas no ocupan a la vez la última plaza. Afecta a `pf_save_project` y a cualquier inserción directa; nunca a actualizaciones: una cuenta que ya supere el límite conserva y edita sus proyectos, y borrar uno libera una plaza. Repetir una creación con un `requestId` ya guardado devuelve ese proyecto aunque la cuenta esté en el límite.

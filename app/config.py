@@ -26,6 +26,8 @@ DEFAULT_UNIPROT_REQUESTS_PER_MINUTE = 20
 # Interpretations one signed-in caller may request each minute, per process. 0 disables the budget.
 DEFAULT_ASSISTANT_REQUESTS_PER_MINUTE = 6
 DEFAULT_ASSISTANT_MODEL = "openai/gpt-oss-120b"
+# Interpretations all accounts together may request per day once the shared budget is on. 0 disables the cap.
+DEFAULT_ASSISTANT_REQUESTS_PER_DAY = 0
 # Shared-link reads one visitor address may make each minute, per process. 0 disables the budget.
 DEFAULT_SHARED_REQUESTS_PER_MINUTE = 30
 # Verified readings kept per process so an identical request does not reach the provider again.
@@ -58,6 +60,9 @@ class Settings:
     live_poll_seconds: float = DEFAULT_LIVE_POLL_SECONDS
     live_max_connection_seconds: float = DEFAULT_LIVE_MAX_CONNECTION_SECONDS
     live: LiveLimits = LiveLimits()
+    # Per-account budgets counted in PostgreSQL (pf_spend) instead of per process; needs 20261113000001.
+    shared_budget_enabled: bool = False
+    assistant_requests_per_day: int = DEFAULT_ASSISTANT_REQUESTS_PER_DAY
 
     @property
     def assistant_enabled(self) -> bool:
@@ -91,6 +96,7 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
     live_poll = env.get("LIVE_POLL_SECONDS", "")
     shared_budget = env.get("SHARED_REQUESTS_PER_MINUTE", "")
     live_duration = env.get("LIVE_MAX_CONNECTION_SECONDS", "")
+    assistant_daily = env.get("ASSISTANT_REQUESTS_PER_DAY", "")
     return Settings(
         allowed_origins=origins,
         supabase_url=env.get("SUPABASE_URL", "").strip().rstrip("/"),
@@ -108,4 +114,6 @@ def load_settings(environment: dict[str, str] | None = None) -> Settings:
         shared_requests_per_minute=int(shared_budget) if shared_budget else DEFAULT_SHARED_REQUESTS_PER_MINUTE,
         live_poll_seconds=float(live_poll) if live_poll else DEFAULT_LIVE_POLL_SECONDS,
         live_max_connection_seconds=float(live_duration) if live_duration else DEFAULT_LIVE_MAX_CONNECTION_SECONDS,
+        shared_budget_enabled=env.get("SHARED_BUDGET_ENABLED", "").strip() == "enabled",
+        assistant_requests_per_day=int(assistant_daily) if assistant_daily else DEFAULT_ASSISTANT_REQUESTS_PER_DAY,
     )

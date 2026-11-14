@@ -706,3 +706,68 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(callable_by, "f")
         self.create_projects(49)
         self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+
+    def spend(self, user=None, scope="assistant", limit=3, window=60, global_limit=0, global_window=86400, check=True):
+        result = self.sql(f"select public.pf_spend('{scope}',{limit},{window},{global_limit},{global_window});", user or self.owner, check=check)
+        return json.loads(result.stdout) if check else result
+
+    def test_spend_counts_one_window_per_account_and_scope(self):
+        self.assertEqual([self.spend() for _ in range(4)], [
+            {"allowed": True, "remaining": 2}, {"allowed": True, "remaining": 1}, {"allowed": True, "remaining": 0}, {"allowed": False, "remaining": 0},
+        ])
+        self.assertEqual(self.spend(self.other), {"allowed": True, "remaining": 2})
+        self.assertEqual(self.spend(scope="uniprot"), {"allowed": True, "remaining": 2})
+        self.assertEqual(self.sql("select public.pf_spend_remaining('assistant',3,60);", self.owner).stdout.strip(), "0")
+        self.assertEqual(self.sql("select public.pf_spend_remaining('folding',1,60);", self.owner).stdout.strip(), "1")
+        # A window ends p_window_seconds after its first request; the next request opens a new one.
+        self.sql(f"update public.spend_windows set started_at = started_at - interval '61 seconds' where subject = '{self.owner}' and scope = 'assistant';")
+        self.assertEqual(self.sql("select public.pf_spend_remaining('assistant',3,60);", self.owner).stdout.strip(), "3")
+        self.assertEqual(self.spend(), {"allowed": True, "remaining": 2})
+        # The scope ceiling applies whatever limit the caller sends, and to a limit of 0 too.
+        self.assertEqual(self.spend(scope="folding", limit=50)["remaining"], 2)
+        self.assertEqual(self.spend(scope="folding", limit=0)["remaining"], 1)
+
+    def test_simultaneous_spends_never_exceed_the_limit(self):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: self.spend(limit=3), range(8)))
+        self.assertEqual(sum(result["allowed"] for result in results), 3)
+        self.assertEqual(sorted(result["remaining"] for result in results if result["allowed"]), [0, 1, 2])
+        self.assertEqual(self.sql(f"select used from public.spend_windows where subject = '{self.owner}' and scope = 'assistant';").stdout.strip(), "3")
+
+    def test_the_shared_window_caps_everyone_and_gives_back_refused_charges(self):
+        everyone = "00000000-0000-0000-0000-000000000000"
+        self.sql(f"delete from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';")
+        users = [str(uuid4()) for _ in range(6)]
+        self.sql("insert into auth.users(id) values " + ",".join(f"('{user}')" for user in users) + ";")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            results = list(executor.map(lambda user: self.spend(user, scope="uniprot", limit=5, global_limit=4), users))
+        self.assertEqual(sum(result["allowed"] for result in results), 4)
+        self.assertEqual(self.sql(f"select used from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';").stdout.strip(), "4")
+        # Refused by the shared window: the caller's own window is left as it was, with its full budget.
+        refused = [user for user, result in zip(users, results, strict=True) if not result["allowed"]]
+        self.assertEqual([result["remaining"] for result in results if not result["allowed"]], [5, 5])
+        used = self.sql("select coalesce(sum(used), 0) from public.spend_windows where scope = 'uniprot' and subject in (" + ",".join(f"'{user}'" for user in refused) + ");").stdout.strip()
+        self.assertEqual(used, "0")
+        self.sql(f"delete from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';")
+
+    def test_spend_is_private_owner_scoped_and_validated(self):
+        self.spend()
+        for operation in ["select * from public.spend_windows;", "insert into public.spend_windows values ('assistant', gen_random_uuid(), now(), 0);", "update public.spend_windows set used = 0;"]:
+            for role in ("authenticated", "anon"):
+                with self.subTest(operation=operation, role=role):
+                    denied = self.sql(operation, self.owner if role == "authenticated" else None, role=role, check=False)
+                    self.assertIn("permission denied", denied.stderr)
+        for function in ["public.pf_spend('assistant',3,60,0,86400)", "public.pf_spend_remaining('assistant',3,60)"]:
+            self.assertNotEqual(self.sql(f"select {function};", role="anon", check=False).returncode, 0)
+        for arguments in ["'other',3,60,0,86400", "'assistant',-1,60,0,86400", "'assistant',3,0,0,86400", "'assistant',3,86401,0,86400",
+                          "'assistant',3,60,100001,86400", "'assistant',3,60,0,0", "'assistant',null,60,0,86400"]:
+            with self.subTest(arguments=arguments):
+                self.assertIn("Invalid spend", self.sql(f"select public.pf_spend({arguments});", self.owner, check=False).stderr)
+        self.assertIn("Authentication required", self.sql("select public.pf_spend('assistant',3,60,0,86400);", "", check=False).stderr)
+
+    def test_shared_budget_migration_is_idempotent(self):
+        self.spend()
+        self.reapply("20261113000001_shared_budget.sql", times=2)
+        self.assertEqual(self.spend(), {"allowed": True, "remaining": 1})
+        overloads = self.sql("select count(*) from pg_proc where proname in ('pf_spend', 'pf_spend_remaining') and pronamespace = 'public'::regnamespace;").stdout.strip()
+        self.assertEqual(overloads, "2")
