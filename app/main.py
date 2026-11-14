@@ -38,6 +38,7 @@ class Health(BaseModel):
     status: str = Field(description="`ok` while the process answers requests.")
     version: str
     identity: bool = Field(description="Whether identity validation is configured.")
+    live: bool = Field(description="Whether the live channel (/v1/live) accepts connections.")
 
 
 class Me(BaseModel):
@@ -100,7 +101,7 @@ def create_app(settings: Settings | None = None, http_client: httpx.AsyncClient 
 
     @app.get(f"{API_PREFIX}/health", response_model=Health, tags=["service"])
     async def health() -> Health:
-        return Health(status="ok", version=API_VERSION, identity=resolved.identity_enabled)
+        return Health(status="ok", version=API_VERSION, identity=resolved.identity_enabled, live=resolved.live_enabled and resolved.identity_enabled)
 
     @app.get(f"{API_PREFIX}/me", response_model=Me, tags=["identity"])
     async def me(identity: CurrentIdentity) -> Me:
