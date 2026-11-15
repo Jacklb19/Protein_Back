@@ -269,9 +269,9 @@ protobuf-py-ext==0.6.0 \
     #   -c requirements.txt
     #   -r requirements.in
     #   protobuf-py
-protoc-gen-connectrpc==0.12.1 \
-    --hash=sha256:dde1652e291be825c4e84e71d9398c6ddd3c5c50995f3872a78ea9e4e21464dc \
-    --hash=sha256:fae558b7d68d27cd5bb3333e8d5969e2031de1fc0263ba1d04c596b26885a878
+protoc-gen-connectrpc==0.13.0 \
+    --hash=sha256:a1224a25fc4d73e7910cb29b9d76c8acf42b922b45e7f74bfd069f1a15f55558 \
+    --hash=sha256:f281e62e94c50770aa7dd3b60495773b7660059a902411ad3366b39c87ec58b7
     # via -r requirements-dev.in
 protoc-gen-py==0.6.0 \
     --hash=sha256:97557d104ad0d98e1927be91a9fde875d63f7d64574f7ace9b5d02ffe9285222 \
