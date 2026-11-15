@@ -1,7 +1,7 @@
 # Direct runtime dependencies. Edit this file, never requirements.txt, then recompile with hashes:
 #   uv pip compile requirements.in --universal --python-version 3.14 --generate-hashes -o requirements.txt
 # Vercel installs requirements.txt; never add pyproject.toml (Vercel reads it as the dependency manifest).
-fastapi==0.142.4
+fastapi==0.162.5
 uvicorn==0.54.0
 httpx==0.28.1
 python-dotenv==1.2.4
