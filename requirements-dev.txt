@@ -32,9 +32,9 @@ click==8.5.1 \
     # via
     #   -c requirements.txt
     #   uvicorn
-connectrpc==0.12.1 \
-    --hash=sha256:ba85ff49b5b7e0f1b16d07b35a05e39ce92c1a7116a7ed1a271c76393323cd07 \
-    --hash=sha256:da7ca41c6cd8d9ce640ad86ae325a71cd83dfdd1e43748976315cb4b0546fb69
+connectrpc==0.13.0 \
+    --hash=sha256:21e3839e6745606c72098a2e50b4d52c82dd2c4e21c0e75fbd7b9413548572fd \
+    --hash=sha256:999d39d016a5bfaceefdbe943b9cfd669dfdf54efb8ccb0c6ed9ae9edee35fad
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -523,6 +523,7 @@ typing-extensions==4.16.0 \
     # via
     #   -c requirements.txt
     #   anyio
+    #   connectrpc
     #   fastapi
     #   opentelemetry-api
     #   protobuf-py
