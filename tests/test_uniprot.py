@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.rate_limit import FixedWindowLimiter
+from app.uniprot import MAX_FEATURE_DESCRIPTION, MAX_FEATURES_PER_KIND
 
 ENTRY = {"primaryAccession": "P01308", "uniProtkbId": "INS_HUMAN", "entryType": "UniProtKB reviewed (Swiss-Prot)", "proteinDescription": {"recommendedName": {"fullName": {"value": "Insulin"}}}, "organism": {"scientificName": "Homo sapiens"}, "sequence": {"length": 3, "value": "ACD"}, "entryAudit": {"entryVersion": 284, "sequenceVersion": 1}, "comments": [{"commentType": "FUNCTION", "texts": [{"value": "Test annotation"}]}], "uniProtKBCrossReferences": [{"database": "PDB", "id": "1TRZ", "properties": [{"key": "Method", "value": "X-ray"}, {"key": "Resolution", "value": "1.60 A"}, {"key": "Chains", "value": "A=90-110"}]}]}
 
@@ -38,6 +39,41 @@ class UniProtTests(unittest.TestCase):
         self.assertEqual(record["structures"][0]["chains"], "A=90-110")
         self.assertEqual(record["sequence"], "ACD")
         self.assertTrue(record["retrievedAt"])
+
+    def test_positional_annotations_keep_only_exact_spans_inside_the_sequence(self):
+        def at(start, end, modifier="EXACT"):
+            return {"start": {"value": start, "modifier": "EXACT"}, "end": {"value": end, "modifier": modifier}}
+        annotated = {**ENTRY, "features": [
+            {"type": "Natural variant", "location": at(2, 2), "description": "in a disease", "alternativeSequence": {"originalSequence": "C", "alternativeSequences": ["S", "Y"]}},
+            {"type": "Disulfide bond", "location": at(1, 3), "description": ""},
+            {"type": "Active site", "location": at(2, 2), "description": "Proton donor"},
+            {"type": "Binding site", "location": at(1, 2), "ligand": {"name": "Zn(2+)"}},
+            {"type": "Domain", "location": at(1, 3, "OUTSIDE"), "description": "Uncertain end"},
+            {"type": "Region", "location": at(2, 9), "description": "Past the sequence"},
+            {"type": "Helix", "location": at(1, 3), "description": "Not a kept type"},
+            {"type": "Site", "location": {"start": {"value": True, "modifier": "EXACT"}, "end": {"value": 2, "modifier": "EXACT"}}},
+            "not a feature",
+        ]}
+        with self.client(lambda _: httpx.Response(200, json=annotated)) as client:
+            record = client.get("/v1/uniprot/P01308", headers={"Authorization": "Bearer user-token"}).json()
+        self.assertEqual(record["features"], [
+            {"kind": "active-site", "description": "Proton donor", "begin": 2, "end": 2, "paired": False},
+            {"kind": "binding-site", "description": "Zn(2+)", "begin": 1, "end": 2, "paired": False},
+            {"kind": "disulfide", "description": "", "begin": 1, "end": 3, "paired": True},
+            {"kind": "variant", "description": "C > S/Y; in a disease", "begin": 2, "end": 2, "paired": False},
+        ])
+        self.assertFalse(record["featuresTruncated"])
+
+    def test_an_entry_without_annotations_has_none_and_crowded_kinds_are_bounded(self):
+        crowded = {**ENTRY, "features": [{"type": "Natural variant", "location": {"start": {"value": 1, "modifier": "EXACT"}, "end": {"value": 1, "modifier": "EXACT"}}, "description": "x" * 900}] * (MAX_FEATURES_PER_KIND + 1)}
+        with self.client() as client:
+            plain = client.get("/v1/uniprot/P01308", headers={"Authorization": "Bearer user-token"}).json()
+        with self.client(lambda _: httpx.Response(200, json=crowded)) as client:
+            record = client.get("/v1/uniprot/P01308", headers={"Authorization": "Bearer user-token"}).json()
+        self.assertEqual((plain["features"], plain["featuresTruncated"]), ([], False))
+        self.assertEqual(len(record["features"]), MAX_FEATURES_PER_KIND)
+        self.assertTrue(record["featuresTruncated"])
+        self.assertEqual(len(record["features"][0]["description"]), MAX_FEATURE_DESCRIPTION)
 
     def test_rejects_inconsistent_public_data_and_translates_provider_errors(self):
         cases = [(httpx.Response(200, json={**ENTRY, "sequence": {"length": 3, "value": "AC"}}), 502), (httpx.Response(200, json={}), 502), (httpx.Response(404), 404), (httpx.Response(429), 429), (httpx.Response(503, text="private provider trace"), 502)]

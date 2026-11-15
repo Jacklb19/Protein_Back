@@ -351,6 +351,11 @@ def entry_message(entry: EntryModel) -> reference_pb.Entry:
             reference_pb.PdbReference(id=item.id, method=item.method, resolution=item.resolution, chains=item.chains)
             for item in entry.structures
         ],
+        features=[
+            reference_pb.ProteinFeature(kind=item.kind, description=item.description, begin=item.begin, end=item.end, paired=item.paired)
+            for item in entry.features
+        ],
+        features_truncated=entry.features_truncated,
     )
 
 

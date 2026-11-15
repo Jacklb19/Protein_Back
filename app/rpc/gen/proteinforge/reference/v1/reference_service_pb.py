@@ -129,7 +129,70 @@ class PdbReference(Message[_PdbReferenceFields]):
         resolution: str
         chains: str
 
-_EntryFields: TypeAlias = Literal["summary", "sequence", "entry_version", "sequence_version", "retrieve_time", "function", "structures"]
+_ProteinFeatureFields: TypeAlias = Literal["kind", "description", "begin", "end", "paired"]
+
+class ProteinFeature(Message[_ProteinFeatureFields]):
+    """
+    A positional annotation of the entry, in UniProt sequence numbering (1-based, inclusive).
+    Only annotations whose two ends are exact and inside the sequence are returned.
+
+    ```proto
+    message proteinforge.reference.v1.ProteinFeature
+    ```
+
+    Attributes:
+        kind:
+            Stable slug of the UniProt feature type: active-site, binding-site, site, dna-binding, zinc-finger, motif,
+            domain, region, transmembrane, signal, transit-peptide, propeptide, chain, peptide, disulfide,
+            modified-residue, glycosylation or variant.
+
+            ```proto
+            string kind = 1;
+            ```
+        description:
+            Text in the source language, at most 400 characters; empty when UniProt gives none.
+
+            ```proto
+            string description = 2;
+            ```
+        begin:
+            ```proto
+            int32 begin = 3;
+            ```
+        end:
+            ```proto
+            int32 end = 4;
+            ```
+        paired:
+            True when the annotation names two residues (a bond) rather than the span between them.
+
+            ```proto
+            bool paired = 5;
+            ```
+    """
+
+    __slots__ = ("kind", "description", "begin", "end", "paired")
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            kind: str = "",
+            description: str = "",
+            begin: int = 0,
+            end: int = 0,
+            paired: bool = False,
+        ) -> None:
+            pass
+
+        kind: str
+        description: str
+        begin: int
+        end: int
+        paired: bool
+
+_EntryFields: TypeAlias = Literal["summary", "sequence", "entry_version", "sequence_version", "retrieve_time", "function", "structures", "features", "features_truncated"]
 
 class Entry(Message[_EntryFields]):
     """
@@ -168,9 +231,21 @@ class Entry(Message[_EntryFields]):
             ```proto
             repeated proteinforge.reference.v1.PdbReference structures = 7;
             ```
+        features:
+            At most 300, and at most 60 of one kind, ordered by kind and then by position.
+
+            ```proto
+            repeated proteinforge.reference.v1.ProteinFeature features = 8;
+            ```
+        features_truncated:
+            True when the entry had more usable annotations than those limits keep.
+
+            ```proto
+            bool features_truncated = 9;
+            ```
     """
 
-    __slots__ = ("summary", "sequence", "entry_version", "sequence_version", "retrieve_time", "function", "structures")
+    __slots__ = ("summary", "sequence", "entry_version", "sequence_version", "retrieve_time", "function", "structures", "features", "features_truncated")
 
     if TYPE_CHECKING:
 
@@ -184,6 +259,8 @@ class Entry(Message[_EntryFields]):
             retrieve_time: Timestamp | None = None,
             function: str | None = None,
             structures: list[PdbReference] | None = None,
+            features: list[ProteinFeature] | None = None,
+            features_truncated: bool = False,
         ) -> None:
             pass
 
@@ -194,6 +271,8 @@ class Entry(Message[_EntryFields]):
         retrieve_time: Timestamp | None
         function: str
         structures: list[PdbReference]
+        features: list[ProteinFeature]
+        features_truncated: bool
 
 _SearchEntriesRequestFields: TypeAlias = Literal["query"]
 
@@ -601,13 +680,14 @@ class GetResidueMappingResponse(Message[_GetResidueMappingResponseFields]):
 
 
 _DESC = file_desc(
-    b'\n1proteinforge/reference/v1/reference_service.proto\x12\x19proteinforge.reference.v1\x1a\x1fgoogle/protobuf/timestamp.proto"\x90\x01\n\x0cEntrySummary\x12\x1c\n\taccession\x18\x01 \x01(\tR\taccession\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n\x08organism\x18\x03 \x01(\tR\x08organism\x12\x1a\n\x08reviewed\x18\x04 \x01(\x08R\x08reviewed\x12\x16\n\x06length\x18\x05 \x01(\x05R\x06length"\x92\x01\n\x0cPdbReference\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12#\n\nresolution\x18\x03 \x01(\tH\x00R\nresolution\x88\x01\x01\x12\x1b\n\x06chains\x18\x04 \x01(\tH\x01R\x06chains\x88\x01\x01B\r\n\x0b_resolutionB\t\n\x07_chains"\xee\x02\n\x05Entry\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.reference.v1.EntrySummaryR\x07summary\x12\x1a\n\x08sequence\x18\x02 \x01(\tR\x08sequence\x12#\n\rentry_version\x18\x03 \x01(\x05R\x0centryVersion\x12)\n\x10sequence_version\x18\x04 \x01(\x05R\x0fsequenceVersion\x12?\n\rretrieve_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTime\x12\x1f\n\x08function\x18\x06 \x01(\tH\x00R\x08function\x88\x01\x01\x12G\n\nstructures\x18\x07 \x03(\x0b2\'.proteinforge.reference.v1.PdbReferenceR\nstructuresB\x0b\n\t_function",\n\x14SearchEntriesRequest\x12\x14\n\x05query\x18\x01 \x01(\tR\x05query"\xcf\x01\n\x15SearchEntriesResponse\x12A\n\x07entries\x18\x01 \x03(\x0b2\'.proteinforge.reference.v1.EntrySummaryR\x07entries\x12\x14\n\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x1c\n\ttruncated\x18\x03 \x01(\x08R\ttruncated\x12?\n\rretrieve_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTime"/\n\x0fGetEntryRequest\x12\x1c\n\taccession\x18\x01 \x01(\tR\taccession"J\n\x10GetEntryResponse\x126\n\x05entry\x18\x01 \x01(\x0b2 .proteinforge.reference.v1.EntryR\x05entry"z\n\x18GetResidueMappingRequest\x12\x15\n\x06pdb_id\x18\x01 \x01(\tR\x05pdbId\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession\x12)\n\x10sequence_version\x18\x03 \x01(\x05R\x0fsequenceVersion"\xc5\x01\n\x18ResidueMappingProvenance\x12\x1a\n\x08provider\x18\x01 \x01(\tR\x08provider\x12\x17\n\x07xml_url\x18\x02 \x01(\tR\x06xmlUrl\x12.\n\x13residue_listing_url\x18\x03 \x01(\tR\x11residueListingUrl\x12!\n\x0cretrieved_at\x18\x04 \x01(\tR\x0bretrievedAt\x12!\n\x0crelease_date\x18\x05 \x01(\tR\x0breleaseDate"\x8a\x03\n\x11ResidueMappingRow\x12\x1b\n\tentity_id\x18\x01 \x01(\tR\x08entityId\x12"\n\rlabel_asym_id\x18\x02 \x01(\tR\x0blabelAsymId\x12 \n\x0cauth_asym_id\x18\x03 \x01(\tR\nauthAsymId\x12 \n\x0clabel_seq_id\x18\x04 \x01(\x05R\nlabelSeqId\x12#\n\x0bauth_seq_id\x18\x05 \x01(\tH\x00R\tauthSeqId\x88\x01\x01\x12%\n\x0einsertion_code\x18\x06 \x01(\tR\rinsertionCode\x12\x1d\n\nsegment_id\x18\x07 \x01(\tR\tsegmentId\x12\x1c\n\taccession\x18\x08 \x01(\tR\taccession\x12\x1a\n\x08position\x18\t \x01(\x05R\x08position\x12\x18\n\x07residue\x18\n \x01(\tR\x07residue\x12!\n\x0cnot_observed\x18\x0b \x01(\x08R\x0bnotObservedB\x0e\n\x0c_auth_seq_id"\xe0\x01\n\x16ResidueMappingDocument\x12\x18\n\x07version\x18\x01 \x01(\x05R\x07version\x12\x15\n\x06pdb_id\x18\x02 \x01(\tR\x05pdbId\x12S\n\nprovenance\x18\x03 \x01(\x0b23.proteinforge.reference.v1.ResidueMappingProvenanceR\nprovenance\x12@\n\x04rows\x18\x04 \x03(\x0b2,.proteinforge.reference.v1.ResidueMappingRowR\x04rows"\xe2\x01\n\x19GetResidueMappingResponse\x12K\n\x07mapping\x18\x01 \x01(\x0b21.proteinforge.reference.v1.ResidueMappingDocumentR\x07mapping\x12<\n\x1areference_sequence_version\x18\x02 \x01(\x05R\x18referenceSequenceVersion\x12:\n\x19reference_sequence_sha256\x18\x03 \x01(\tR\x17referenceSequenceSha2562\xfb\x02\n\x10ReferenceService\x12w\n\rSearchEntries\x12/.proteinforge.reference.v1.SearchEntriesRequest\x1a0.proteinforge.reference.v1.SearchEntriesResponse"\x03\x90\x02\x01\x12h\n\x08GetEntry\x12*.proteinforge.reference.v1.GetEntryRequest\x1a+.proteinforge.reference.v1.GetEntryResponse"\x03\x90\x02\x01\x12\x83\x01\n\x11GetResidueMapping\x123.proteinforge.reference.v1.GetResidueMappingRequest\x1a4.proteinforge.reference.v1.GetResidueMappingResponse"\x03\x90\x02\x01b\x06proto3',
+    b'\n1proteinforge/reference/v1/reference_service.proto\x12\x19proteinforge.reference.v1\x1a\x1fgoogle/protobuf/timestamp.proto"\x90\x01\n\x0cEntrySummary\x12\x1c\n\taccession\x18\x01 \x01(\tR\taccession\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n\x08organism\x18\x03 \x01(\tR\x08organism\x12\x1a\n\x08reviewed\x18\x04 \x01(\x08R\x08reviewed\x12\x16\n\x06length\x18\x05 \x01(\x05R\x06length"\x92\x01\n\x0cPdbReference\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n\x06method\x18\x02 \x01(\tR\x06method\x12#\n\nresolution\x18\x03 \x01(\tH\x00R\nresolution\x88\x01\x01\x12\x1b\n\x06chains\x18\x04 \x01(\tH\x01R\x06chains\x88\x01\x01B\r\n\x0b_resolutionB\t\n\x07_chains"\x86\x01\n\x0eProteinFeature\x12\x12\n\x04kind\x18\x01 \x01(\tR\x04kind\x12 \n\x0bdescription\x18\x02 \x01(\tR\x0bdescription\x12\x14\n\x05begin\x18\x03 \x01(\x05R\x05begin\x12\x10\n\x03end\x18\x04 \x01(\x05R\x03end\x12\x16\n\x06paired\x18\x05 \x01(\x08R\x06paired"\xe4\x03\n\x05Entry\x12A\n\x07summary\x18\x01 \x01(\x0b2\'.proteinforge.reference.v1.EntrySummaryR\x07summary\x12\x1a\n\x08sequence\x18\x02 \x01(\tR\x08sequence\x12#\n\rentry_version\x18\x03 \x01(\x05R\x0centryVersion\x12)\n\x10sequence_version\x18\x04 \x01(\x05R\x0fsequenceVersion\x12?\n\rretrieve_time\x18\x05 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTime\x12\x1f\n\x08function\x18\x06 \x01(\tH\x00R\x08function\x88\x01\x01\x12G\n\nstructures\x18\x07 \x03(\x0b2\'.proteinforge.reference.v1.PdbReferenceR\nstructures\x12E\n\x08features\x18\x08 \x03(\x0b2).proteinforge.reference.v1.ProteinFeatureR\x08features\x12-\n\x12features_truncated\x18\t \x01(\x08R\x11featuresTruncatedB\x0b\n\t_function",\n\x14SearchEntriesRequest\x12\x14\n\x05query\x18\x01 \x01(\tR\x05query"\xcf\x01\n\x15SearchEntriesResponse\x12A\n\x07entries\x18\x01 \x03(\x0b2\'.proteinforge.reference.v1.EntrySummaryR\x07entries\x12\x14\n\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x1c\n\ttruncated\x18\x03 \x01(\x08R\ttruncated\x12?\n\rretrieve_time\x18\x04 \x01(\x0b2\x1a.google.protobuf.TimestampR\x0cretrieveTime"/\n\x0fGetEntryRequest\x12\x1c\n\taccession\x18\x01 \x01(\tR\taccession"J\n\x10GetEntryResponse\x126\n\x05entry\x18\x01 \x01(\x0b2 .proteinforge.reference.v1.EntryR\x05entry"z\n\x18GetResidueMappingRequest\x12\x15\n\x06pdb_id\x18\x01 \x01(\tR\x05pdbId\x12\x1c\n\taccession\x18\x02 \x01(\tR\taccession\x12)\n\x10sequence_version\x18\x03 \x01(\x05R\x0fsequenceVersion"\xc5\x01\n\x18ResidueMappingProvenance\x12\x1a\n\x08provider\x18\x01 \x01(\tR\x08provider\x12\x17\n\x07xml_url\x18\x02 \x01(\tR\x06xmlUrl\x12.\n\x13residue_listing_url\x18\x03 \x01(\tR\x11residueListingUrl\x12!\n\x0cretrieved_at\x18\x04 \x01(\tR\x0bretrievedAt\x12!\n\x0crelease_date\x18\x05 \x01(\tR\x0breleaseDate"\x8a\x03\n\x11ResidueMappingRow\x12\x1b\n\tentity_id\x18\x01 \x01(\tR\x08entityId\x12"\n\rlabel_asym_id\x18\x02 \x01(\tR\x0blabelAsymId\x12 \n\x0cauth_asym_id\x18\x03 \x01(\tR\nauthAsymId\x12 \n\x0clabel_seq_id\x18\x04 \x01(\x05R\nlabelSeqId\x12#\n\x0bauth_seq_id\x18\x05 \x01(\tH\x00R\tauthSeqId\x88\x01\x01\x12%\n\x0einsertion_code\x18\x06 \x01(\tR\rinsertionCode\x12\x1d\n\nsegment_id\x18\x07 \x01(\tR\tsegmentId\x12\x1c\n\taccession\x18\x08 \x01(\tR\taccession\x12\x1a\n\x08position\x18\t \x01(\x05R\x08position\x12\x18\n\x07residue\x18\n \x01(\tR\x07residue\x12!\n\x0cnot_observed\x18\x0b \x01(\x08R\x0bnotObservedB\x0e\n\x0c_auth_seq_id"\xe0\x01\n\x16ResidueMappingDocument\x12\x18\n\x07version\x18\x01 \x01(\x05R\x07version\x12\x15\n\x06pdb_id\x18\x02 \x01(\tR\x05pdbId\x12S\n\nprovenance\x18\x03 \x01(\x0b23.proteinforge.reference.v1.ResidueMappingProvenanceR\nprovenance\x12@\n\x04rows\x18\x04 \x03(\x0b2,.proteinforge.reference.v1.ResidueMappingRowR\x04rows"\xe2\x01\n\x19GetResidueMappingResponse\x12K\n\x07mapping\x18\x01 \x01(\x0b21.proteinforge.reference.v1.ResidueMappingDocumentR\x07mapping\x12<\n\x1areference_sequence_version\x18\x02 \x01(\x05R\x18referenceSequenceVersion\x12:\n\x19reference_sequence_sha256\x18\x03 \x01(\tR\x17referenceSequenceSha2562\xfb\x02\n\x10ReferenceService\x12w\n\rSearchEntries\x12/.proteinforge.reference.v1.SearchEntriesRequest\x1a0.proteinforge.reference.v1.SearchEntriesResponse"\x03\x90\x02\x01\x12h\n\x08GetEntry\x12*.proteinforge.reference.v1.GetEntryRequest\x1a+.proteinforge.reference.v1.GetEntryResponse"\x03\x90\x02\x01\x12\x83\x01\n\x11GetResidueMapping\x123.proteinforge.reference.v1.GetResidueMappingRequest\x1a4.proteinforge.reference.v1.GetResidueMappingResponse"\x03\x90\x02\x01b\x06proto3',
     [
         timestamp_pb.desc(),
     ],
     {
         "EntrySummary": EntrySummary,
         "PdbReference": PdbReference,
+        "ProteinFeature": ProteinFeature,
         "Entry": Entry,
         "SearchEntriesRequest": SearchEntriesRequest,
         "SearchEntriesResponse": SearchEntriesResponse,
