@@ -1,4 +1,4 @@
-"""Per-caller request budget for the public providers this API queries on a user's behalf."""
+"""In-process fixed windows: per-address limits, and the fallback of the shared budget (app/spend.py)."""
 
 from __future__ import annotations
 

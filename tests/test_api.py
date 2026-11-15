@@ -61,7 +61,7 @@ class ApiTests(unittest.TestCase):
         with self.client() as client:
             response = client.get("/v1/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "version": "0.1.0", "identity": True})
+        self.assertEqual(response.json(), {"status": "ok", "version": "0.1.0", "identity": True, "live": False})
         self.assertTrue(response.headers["X-Request-Id"])
 
     def test_docs_and_schema_are_served_only_when_enabled(self):

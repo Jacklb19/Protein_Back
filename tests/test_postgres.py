@@ -643,3 +643,288 @@ class PostgresSecurityTests(unittest.TestCase):
         self.assertEqual(self.reserve()['report']['status'], 'pending')
         for function in ["public.pf_report_object(gen_random_uuid())", "public.pf_complete_report(gen_random_uuid())", "public.pf_delete_report(gen_random_uuid())"]:
             self.assertNotEqual(self.sql(f"select {function};", role='anon', check=False).returncode, 0)
+
+    def create_projects(self, count, user=None):
+        # Rows straight away in one session; each create still runs pf_save_project and its insert trigger.
+        self.sql(f"select count(public.pf_save_project(null,'Bulk '||g,'ACD','{self.snapshot}',null)) from generate_series(1,{count}) g;", user or self.owner)
+
+    def project_count(self, user):
+        return int(self.sql(f"select count(*) from public.projects where owner_id='{user}';").stdout.strip())
+
+    def test_project_quota_refuses_the_fifty_first_create_but_never_an_update(self):
+        key = str(uuid4())
+        self.keyed_create(key)
+        self.create_projects(48)
+        self.assertEqual(self.project_count(self.owner), 50)
+        refused = self.sql(f"select public.pf_save_project(null,'Extra','ACD','{self.snapshot}',null);", self.owner, check=False)
+        self.assertIn("Project quota exceeded", refused.stderr)
+        self.assertEqual(self.project_count(self.owner), 50)
+        # A retried create with a stored request id is the same project, not a new one.
+        self.assertEqual(self.keyed_create(key).returncode, 0)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+        # A direct insert under RLS meets the same quota.
+        direct = self.sql(f"insert into public.projects(owner_id,name,active_sequence) values ('{self.owner}','Direct','ACD');", self.owner, check=False)
+        self.assertIn("Project quota exceeded", direct.stderr)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Still editable','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual(saved["name"], "Still editable")
+        # The quota is per account, and deleting a project frees a place.
+        self.assertEqual(self.keyed_create(str(uuid4()), user=self.other).returncode, 0)
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.owner)
+        self.assertEqual(self.keyed_create(str(uuid4())).returncode, 0)
+
+    def test_accounts_above_the_quota_keep_and_edit_their_projects(self):
+        # Rows from before the quota: replica mode skips the insert trigger, as if they predated it.
+        self.sql(f"set session_replication_role = replica; insert into public.projects(owner_id,name,active_sequence) select '{self.owner}','Old '||g,'ACD' from generate_series(1,54) g;")
+        self.assertEqual(self.project_count(self.owner), 55)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+        saved = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Kept','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual((saved["name"], saved["activeSequence"]), ("Kept", "ACDE"))
+        self.sql(f"select public.pf_delete_project('{self.id}','{saved['updatedAt']}');", self.owner)
+        self.assertEqual(self.project_count(self.owner), 54)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+
+    def test_two_simultaneous_creates_cannot_both_take_the_last_place(self):
+        self.create_projects(48)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda name: self.keyed_create(str(uuid4()), name=name, check=False), ["First", "Second"]))
+        self.assertEqual(sum(result.returncode == 0 for result in results), 1, [result.stderr for result in results])
+        self.assertIn("Project quota exceeded", next(result.stderr for result in results if result.returncode != 0))
+        self.assertEqual(self.project_count(self.owner), 50)
+        # Two creates with the same request id at the limit: both answer with the one stored project.
+        self.sql(f"select public.pf_delete_project(id, updated_at) from public.projects where owner_id='{self.owner}' and name in ('First','Second');", self.owner)
+        key = str(uuid4())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            same = list(executor.map(lambda name: self.keyed_create(key, name=name, check=False), ["First", "Second"]))
+        self.assertEqual([result.returncode for result in same], [0, 0], [result.stderr for result in same])
+        self.assertEqual(len({json.loads(result.stdout)["id"] for result in same}), 1)
+
+    def test_project_quota_migration_is_idempotent_and_its_trigger_is_not_callable(self):
+        self.reapply("20261113000000_project_quota.sql", times=2)
+        triggers = self.sql("select count(*) from pg_trigger where tgrelid='public.projects'::regclass and tgname='pf_project_quota';").stdout.strip()
+        self.assertEqual(triggers, "1")
+        callable_by = self.sql("select has_function_privilege('authenticated', 'public.pf_project_before_insert_quota()', 'execute') or has_function_privilege('anon', 'public.pf_project_before_insert_quota()', 'execute');").stdout.strip()
+        self.assertEqual(callable_by, "f")
+        self.create_projects(49)
+        self.assertIn("Project quota exceeded", self.keyed_create(str(uuid4()), check=False).stderr)
+
+    def spend(self, user=None, scope="assistant", limit=3, window=60, global_limit=0, global_window=86400, check=True):
+        result = self.sql(f"select public.pf_spend('{scope}',{limit},{window},{global_limit},{global_window});", user or self.owner, check=check)
+        return json.loads(result.stdout) if check else result
+
+    def test_spend_counts_one_window_per_account_and_scope(self):
+        self.assertEqual([self.spend() for _ in range(4)], [
+            {"allowed": True, "remaining": 2}, {"allowed": True, "remaining": 1}, {"allowed": True, "remaining": 0}, {"allowed": False, "remaining": 0},
+        ])
+        self.assertEqual(self.spend(self.other), {"allowed": True, "remaining": 2})
+        self.assertEqual(self.spend(scope="uniprot"), {"allowed": True, "remaining": 2})
+        self.assertEqual(self.sql("select public.pf_spend_remaining('assistant',3,60);", self.owner).stdout.strip(), "0")
+        self.assertEqual(self.sql("select public.pf_spend_remaining('folding',1,60);", self.owner).stdout.strip(), "1")
+        # A window ends p_window_seconds after its first request; the next request opens a new one.
+        self.sql(f"update public.spend_windows set started_at = started_at - interval '61 seconds' where subject = '{self.owner}' and scope = 'assistant';")
+        self.assertEqual(self.sql("select public.pf_spend_remaining('assistant',3,60);", self.owner).stdout.strip(), "3")
+        self.assertEqual(self.spend(), {"allowed": True, "remaining": 2})
+        # The scope ceiling applies whatever limit the caller sends, and to a limit of 0 too.
+        self.assertEqual(self.spend(scope="folding", limit=50)["remaining"], 2)
+        self.assertEqual(self.spend(scope="folding", limit=0)["remaining"], 1)
+
+    def test_simultaneous_spends_never_exceed_the_limit(self):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: self.spend(limit=3), range(8)))
+        self.assertEqual(sum(result["allowed"] for result in results), 3)
+        self.assertEqual(sorted(result["remaining"] for result in results if result["allowed"]), [0, 1, 2])
+        self.assertEqual(self.sql(f"select used from public.spend_windows where subject = '{self.owner}' and scope = 'assistant';").stdout.strip(), "3")
+
+    def test_the_shared_window_caps_everyone_and_gives_back_refused_charges(self):
+        everyone = "00000000-0000-0000-0000-000000000000"
+        self.sql(f"delete from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';")
+        users = [str(uuid4()) for _ in range(6)]
+        self.sql("insert into auth.users(id) values " + ",".join(f"('{user}')" for user in users) + ";")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            results = list(executor.map(lambda user: self.spend(user, scope="uniprot", limit=5, global_limit=4), users))
+        self.assertEqual(sum(result["allowed"] for result in results), 4)
+        self.assertEqual(self.sql(f"select used from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';").stdout.strip(), "4")
+        # Refused by the shared window: the caller's own window is left as it was, with its full budget.
+        refused = [user for user, result in zip(users, results, strict=True) if not result["allowed"]]
+        self.assertEqual([result["remaining"] for result in results if not result["allowed"]], [5, 5])
+        used = self.sql("select coalesce(sum(used), 0) from public.spend_windows where scope = 'uniprot' and subject in (" + ",".join(f"'{user}'" for user in refused) + ");").stdout.strip()
+        self.assertEqual(used, "0")
+        self.sql(f"delete from public.spend_windows where subject = '{everyone}' and scope = 'uniprot';")
+
+    def test_spend_is_private_owner_scoped_and_validated(self):
+        self.spend()
+        for operation in ["select * from public.spend_windows;", "insert into public.spend_windows values ('assistant', gen_random_uuid(), now(), 0);", "update public.spend_windows set used = 0;"]:
+            for role in ("authenticated", "anon"):
+                with self.subTest(operation=operation, role=role):
+                    denied = self.sql(operation, self.owner if role == "authenticated" else None, role=role, check=False)
+                    self.assertIn("permission denied", denied.stderr)
+        for function in ["public.pf_spend('assistant',3,60,0,86400)", "public.pf_spend_remaining('assistant',3,60)"]:
+            self.assertNotEqual(self.sql(f"select {function};", role="anon", check=False).returncode, 0)
+        for arguments in ["'other',3,60,0,86400", "'assistant',-1,60,0,86400", "'assistant',3,0,0,86400", "'assistant',3,86401,0,86400",
+                          "'assistant',3,60,100001,86400", "'assistant',3,60,0,0", "'assistant',null,60,0,86400"]:
+            with self.subTest(arguments=arguments):
+                self.assertIn("Invalid spend", self.sql(f"select public.pf_spend({arguments});", self.owner, check=False).stderr)
+        self.assertIn("Authentication required", self.sql("select public.pf_spend('assistant',3,60,0,86400);", "", check=False).stderr)
+
+    def test_shared_budget_migration_is_idempotent(self):
+        self.spend()
+        self.reapply("20261113000001_shared_budget.sql", times=2)
+        self.assertEqual(self.spend(), {"allowed": True, "remaining": 1})
+        overloads = self.sql("select count(*) from pg_proc where proname in ('pf_spend', 'pf_spend_remaining') and pronamespace = 'public'::regnamespace;").stdout.strip()
+        self.assertEqual(overloads, "2")
+
+    AAL1 = """set request.jwt.claims = '{"aal": "aal1"}';"""
+    AAL2 = """set request.jwt.claims = '{"aal": "aal2"}';"""
+
+    def enroll(self, user, status="verified"):
+        self.sql(f"insert into auth.mfa_factors(user_id, status) values ('{user}', '{status}');")
+
+    def test_accounts_without_a_verified_factor_keep_working_at_aal1(self):
+        self.enroll(self.other, "unverified")
+        for user, claims in [(self.owner, ""), (self.owner, self.AAL1), (self.other, self.AAL1)]:
+            with self.subTest(user=user, claims=claims):
+                created = json.loads(self.sql(f"{claims} select public.pf_save_project(null,'Plain','ACD','{self.snapshot}',null);", user).stdout)
+                self.assertEqual(self.sql(f"{claims} select count(*) from public.projects where id='{created['id']}';", user).stdout.strip(), "1")
+        saved = json.loads(self.sql(f"{self.AAL1} select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        self.assertEqual(self.sql(f"{self.AAL1} select count(*) from public.project_versions where project_id='{self.id}';", self.owner).stdout.strip(), "1")
+        self.assertEqual(saved["activeSequence"], "ACDE")
+        self.assertEqual(self.reserve()["report"]["status"], "pending")
+
+    def test_an_enrolled_account_needs_aal2_for_every_protected_table(self):
+        digest = "9" * 64
+        self.sql(f"select public.pf_share_project('{self.id}','{digest}');", self.owner)
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner)
+        reserved = self.reserve(project=self.id)
+        self.upload(reserved["objectPath"])
+        self.enroll(self.owner)
+        tables = {
+            "projects": f"id='{self.id}'", "analyses": f"project_id='{self.id}'", "project_versions": f"project_id='{self.id}'",
+            "project_shares": f"project_id='{self.id}'", "reports": f"owner_id='{self.owner}'", "storage.objects": "bucket_id='reports'",
+        }
+        for table, predicate in tables.items():
+            qualified = table if "." in table else f"public.{table}"
+            with self.subTest(table=table):
+                self.assertEqual(self.sql(f"{self.AAL1} select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "0")
+                self.assertEqual(self.sql(f"select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "0")
+                self.assertEqual(self.sql(f"{self.AAL2} select count(*) from {qualified} where {predicate};", self.owner).stdout.strip(), "1")
+        # Writes through the invoker functions are refused too, without changing anything.
+        current = json.loads(self.sql(f"{self.AAL2} select public.pf_project_document('{self.id}');", self.owner).stdout)
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_project_document('{self.id}') is null;", self.owner).stdout.strip(), "t")
+        refused = self.sql(f"{self.AAL1} select public.pf_save_project(null,'New','ACD','{self.snapshot}',null);", self.owner, check=False)
+        self.assertIn("row-level security", refused.stderr)
+        update = self.sql(f"{self.AAL1} select public.pf_save_project('{self.id}','Changed','ACD','{self.snapshot}','{current['updatedAt']}');", self.owner, check=False)
+        self.assertIn("Project not found", update.stderr)
+        self.assertIn("row-level security", self.sql(f"{self.AAL1} insert into storage.objects(bucket_id,name,owner,metadata) values ('reports','{self.owner}/x.pdf','{self.owner}','{{}}');", self.owner, check=False).stderr)
+        self.assertEqual(self.reports(), [])
+        # At aal2 the same account saves, keeps a version through the definer function and lists its reports.
+        saved = json.loads(self.sql(f"{self.AAL2} select public.pf_save_project('{self.id}','Changed','ACDEF','{self.snapshot}','{current['updatedAt']}');", self.owner).stdout)
+        self.assertEqual(saved["name"], "Changed")
+        self.assertEqual(self.sql(f"{self.AAL2} select count(*) from public.project_versions where project_id='{self.id}';", self.owner).stdout.strip(), "2")
+        listed = json.loads(self.sql(f"{self.AAL2} select coalesce(jsonb_agg(r), '[]'::jsonb) from public.pf_list_reports(51,0,null) r;", self.owner).stdout)
+        self.assertEqual([row["id"] for row in listed], [reserved["report"]["id"]])
+        # Anonymous link reads go through a definer function and never depend on the owner's factors.
+        opened = json.loads(self.sql(f"select public.pf_shared_project('{digest}');", role="anon").stdout)
+        self.assertEqual(opened["name"], "Changed")
+        # Another account is unaffected by this one's enrolment.
+        self.assertEqual(self.sql("select count(*) from public.projects;", self.other).stdout.strip(), "0")
+        self.assertEqual(json.loads(self.sql(f"select public.pf_save_project(null,'Theirs','ACD','{self.snapshot}',null);", self.other).stdout)["name"], "Theirs")
+
+    def test_mfa_policies_are_restrictive_idempotent_and_their_check_is_not_public(self):
+        self.reapply("20261113000002_mfa_policies.sql", times=2)
+        policies = self.sql("select count(*) from pg_policies where policyname like 'Require MFA once enrolled%' and permissive = 'RESTRICTIVE' and roles = '{authenticated}';").stdout.strip()
+        self.assertEqual(policies, "6")
+        self.assertEqual(self.sql("select has_function_privilege('anon', 'public.pf_session_meets_mfa()', 'execute');").stdout.strip(), "f")
+        self.enroll(self.owner)
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_session_meets_mfa();", self.owner).stdout.strip(), "f")
+        self.assertEqual(self.sql(f"{self.AAL2} select public.pf_session_meets_mfa();", self.owner).stdout.strip(), "t")
+        self.assertEqual(self.sql(f"{self.AAL1} select public.pf_session_meets_mfa();", self.other).stdout.strip(), "t")
+
+    def test_definer_functions_that_write_for_the_caller_also_need_aal2_once_enrolled(self):
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner)
+        version = self.sql(f"select id from public.project_versions where project_id='{self.id}';").stdout.strip()
+        self.enroll(self.owner)
+        for call in [f"select public.pf_share_project('{self.id}','{'8' * 64}');", f"select public.pf_unshare_project('{self.id}');",
+                     f"select public.pf_keep_project_version('{self.id}','{version}');"]:
+            with self.subTest(call=call.split("(")[0]):
+                self.assertIn("MFA required", self.sql(f"{self.AAL1} {call}", self.owner, check=False).stderr)
+                self.assertEqual(self.sql(f"{self.AAL2} {call}", self.owner).returncode, 0)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{'8' * 64}') is null;", role="anon").stdout.strip(), "t")
+        # Accounts without a factor call them at aal1 as before.
+        theirs = json.loads(self.sql(f"select public.pf_save_project(null,'Theirs','ACD','{self.snapshot}',null);", self.other).stdout)
+        self.assertIn("expiresAt", json.loads(self.sql(f"{self.AAL1} select public.pf_share_project('{theirs['id']}','{'7' * 64}');", self.other).stdout))
+
+    def test_a_link_lasts_the_chosen_days_and_older_clients_keep_seven(self):
+        lasted = {}
+        for days in (1, 7, 30):
+            digest = f"{days:064d}".replace("0", "a")
+            shared = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{digest}',{days});", self.owner).stdout)
+            lasted[days] = self.sql(f"select extract(epoch from ('{shared['expiresAt']}'::timestamptz - '{shared['createdAt']}'::timestamptz)) / 86400;").stdout.strip()
+        self.assertEqual({days: float(value) for days, value in lasted.items()}, {1: 1.0, 7: 7.0, 30: 30.0})
+        default = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{'d' * 64}');", self.owner).stdout)
+        span = self.sql(f"select extract(epoch from ('{default['expiresAt']}'::timestamptz - '{default['createdAt']}'::timestamptz)) / 86400;").stdout.strip()
+        self.assertEqual(float(span), 7.0)
+        for days in ("0", "2", "31", "null", "-1"):
+            with self.subTest(days=days):
+                refused = self.sql(f"select public.pf_share_project('{self.id}','{'e' * 64}',{days});", self.owner, check=False)
+                self.assertIn("Invalid duration", refused.stderr)
+        self.assertEqual(self.sql(f"select public.pf_shared_project('{'d' * 64}') is null;", role="anon").stdout.strip(), "f")
+        self.assertNotEqual(self.sql(f"select public.pf_share_project('{self.id}','{'f' * 64}',7);", role="anon", check=False).returncode, 0)
+        self.assertIn("Project not found", self.sql(f"select public.pf_share_project('{self.id}','{'f' * 64}',7);", self.other, check=False).stderr)
+
+    def test_an_enrolled_account_needs_aal2_for_either_form_of_starting_a_link(self):
+        self.enroll(self.owner)
+        for call in (f"select public.pf_share_project('{self.id}','{'1' * 64}',30);", f"select public.pf_share_project('{self.id}','{'1' * 64}');"):
+            with self.subTest(call=call):
+                self.assertIn("MFA required", self.sql(f"{self.AAL1} {call}", self.owner, check=False).stderr)
+                self.assertEqual(self.sql(f"{self.AAL2} {call}", self.owner).returncode, 0)
+
+    def listing_with_links(self, user=None, claims=""):
+        rows = self.sql(f"{claims} select coalesce(jsonb_agg(jsonb_build_object('id', l.id, 'expires', l.share_expires_at) order by l.n), '[]') from public.pf_list_projects_with_links(10,0,'','name',40) with ordinality l(id, name, status, created_at, updated_at, preview, share_expires_at, n);", user or self.owner).stdout
+        return json.loads(rows)
+
+    def test_the_listing_says_until_when_each_project_is_shared(self):
+        second = json.loads(self.sql(f"select public.pf_save_project(null,'Another','ACD','{self.snapshot}',null);", self.owner).stdout)
+        expired = json.loads(self.sql(f"select public.pf_save_project(null,'Zeta','ACD','{self.snapshot}',null);", self.owner).stdout)
+        shared = json.loads(self.sql(f"select public.pf_share_project('{self.id}','{'2' * 64}',30);", self.owner).stdout)
+        self.sql(f"select public.pf_share_project('{expired['id']}','{'3' * 64}',1);", self.owner)
+        self.sql(f"update public.project_shares set expires_at = now() - interval '1 second' where project_id = '{expired['id']}';")
+        listing = self.listing_with_links()
+        # Same order as pf_list_projects (by name here); only the unexpired link has a date.
+        self.assertEqual([row["id"] for row in listing], [second["id"], self.id, expired["id"]])
+        self.assertEqual([row["expires"] is not None for row in listing], [False, True, False])
+        stored = self.sql(f"select '{listing[1]['expires']}'::timestamptz = '{shared['expiresAt']}'::timestamptz;").stdout.strip()
+        self.assertEqual(stored, "t")
+        plain = json.loads(self.sql("select coalesce(jsonb_agg(l.id order by l.n), '[]') from public.pf_list_projects(10,0,'','name',40) with ordinality l(id, name, status, created_at, updated_at, preview, n);", self.owner).stdout)
+        self.assertEqual(plain, [row["id"] for row in listing])
+        self.assertEqual(self.listing_with_links(self.other), [])
+        self.assertIn("Invalid project query", self.sql("select * from public.pf_list_projects_with_links(0,0,'','name',40);", self.owner, check=False).stderr)
+        self.assertNotEqual(self.sql("select * from public.pf_list_projects_with_links(10,0,'','name',40);", role="anon", check=False).returncode, 0)
+        # Behind the MFA policies, an enrolled account at aal1 lists nothing, links included.
+        self.enroll(self.owner)
+        self.assertEqual(self.listing_with_links(claims=self.AAL1), [])
+
+    def test_share_duration_migration_is_idempotent(self):
+        self.reapply("20261114000000_share_duration.sql", times=2)
+        overloads = self.sql("select count(*) from pg_proc where proname = 'pf_share_project' and pronamespace = 'public'::regnamespace;").stdout.strip()
+        self.assertEqual(overloads, "2")
+        self.assertIn("expiresAt", self.sql(f"select public.pf_share_project('{self.id}','{'4' * 64}');", self.owner).stdout)
+    def compared_versions(self, user=None):
+        return json.loads(self.sql(f"select public.pf_list_project_versions_compared('{self.id}',40);", user or self.owner).stdout)
+
+    def test_versions_say_whether_their_sequence_is_the_current_one(self):
+        renamed = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{self.version}');", self.owner).stdout)
+        back = json.loads(self.sql(f"select public.pf_save_project('{self.id}','Study','ACD','{self.snapshot}','{renamed['updatedAt']}');", self.owner).stdout)
+        # Versions newest first: ACDE (differs from the current ACD), then ACD (the same).
+        versions = self.compared_versions()
+        self.assertEqual([(version["preview"]["sequenceLength"], version["sameSequence"]) for version in versions], [(4, False), (3, True)])
+        plain = json.loads(self.sql(f"select public.pf_list_project_versions('{self.id}',40);", self.owner).stdout)
+        self.assertEqual([version["id"] for version in plain], [version["id"] for version in versions])
+        self.assertNotIn("activeSequence", json.dumps(versions))
+        self.assertEqual(self.compared_versions(self.other), [])
+        self.assertNotEqual(self.sql(f"select public.pf_list_project_versions_compared('{self.id}',40);", role="anon", check=False).returncode, 0)
+        # The comparison follows the current content: after saving ACDE again the first version matches it.
+        self.sql(f"select public.pf_save_project('{self.id}','Study','ACDE','{self.snapshot}','{back['updatedAt']}');", self.owner)
+        self.assertEqual([version["sameSequence"] for version in self.compared_versions()], [False, True, False])
+
+    def test_version_changes_migration_is_idempotent(self):
+        self.reapply("20261114000001_version_changes.sql", times=2)
+        self.assertEqual(self.compared_versions(), [])

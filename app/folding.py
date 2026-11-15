@@ -18,7 +18,11 @@ from .folding_config import (
     FOLDING_TIMEOUT_SECONDS, FOLDING_URL, FOLDING_WINDOW_SECONDS, MAX_FOLDING_BYTES, MAX_FOLDING_CALLERS,
 )
 from .folding_models import FoldRequest, FoldResult, sequence_hash
-from .identity import CurrentIdentity
+from .context import context_from_state
+from .identity import CurrentIdentity, bearer_token
+from .rate_limit import FixedWindowLimiter
+from .spend import Budget, spend
+from .spend_config import SCOPE_FOLDING
 
 
 class FoldingGate:
@@ -56,7 +60,11 @@ class FoldingGate:
             self._active = False
 
 
-async def predict(state, body: FoldRequest, caller: str) -> FoldResult:
+# Cluster-wide counterpart of the gate's per-caller and overall windows, counted in PostgreSQL when enabled.
+FOLDING_BUDGET = Budget(SCOPE_FOLDING, FOLDING_REQUESTS_PER_MINUTE, int(FOLDING_WINDOW_SECONDS), FOLDING_PROCESS_REQUESTS_PER_MINUTE, int(FOLDING_WINDOW_SECONDS))
+
+
+async def predict(state, body: FoldRequest, caller: str, token: str) -> FoldResult:
     if not body.consent_to_send_sequence:
         raise HTTPException(403, "folding-consent-required")
     if not state.settings.folding_enabled:
@@ -64,6 +72,12 @@ async def predict(state, body: FoldRequest, caller: str) -> FoldResult:
     if not state.folding_gate.acquire(caller):
         raise HTTPException(429, "folding-rate-limit")
     try:
+        # The gate already counted this request in memory, so it is the fallback: an unreachable database
+        # leaves the in-process windows in charge (see app/spend.py).
+        if state.settings.shared_budget_enabled:
+            spent = await spend(context_from_state(state), token, caller, FOLDING_BUDGET, FixedWindowLimiter(0))
+            if not spent.allowed:
+                raise HTTPException(429, "folding-rate-limit")
         # HTTPX phase timeouts alone allow a provider to keep the request alive by
         # sending tiny chunks. Bound the complete exchange as well.
         async with asyncio.timeout(FOLDING_TIMEOUT_SECONDS):
@@ -110,6 +124,6 @@ router = APIRouter(tags=["predictions"])
 
 @router.post("/predictions/fold", response_model=FoldResult)
 async def fold(body: FoldRequest, identity: CurrentIdentity, request: Request, response: Response) -> FoldResult:
-    result = await predict(request.app.state, body, identity.id)
+    result = await predict(request.app.state, body, identity.id, bearer_token(request))
     response.headers["Cache-Control"] = "no-store"
     return result

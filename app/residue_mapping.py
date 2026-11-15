@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import Field
 
 from .context import ServiceContext, context_of
-from .identity import CurrentIdentity
+from .identity import CurrentIdentity, bearer_token
 from .sifts import MappingRecord, PDB_PATTERN, ResidueMapping, SiftsError, SourceLimits, fetch_mapping
 from .uniprot import ACCESSION_PATTERN, fetch_entry
 
@@ -31,7 +31,7 @@ SOURCE_STATUS = {
 
 
 async def get_residue_mapping(context: ServiceContext, pdb_id: str, accession: str,
-                              sequence_version: int, requester: str) -> ResidueMappingResponse:
+                              sequence_version: int, requester: str, token: str) -> ResidueMappingResponse:
     if (not re.fullmatch(PDB_PATTERN, pdb_id) or not re.fullmatch(ACCESSION_PATTERN, accession)
             or type(sequence_version) is not int or not 0 < sequence_version <= 2_147_483_647):
         raise HTTPException(422, 'sifts-invalid-request')
@@ -40,7 +40,7 @@ async def get_residue_mapping(context: ServiceContext, pdb_id: str, accession: s
         async with asyncio.timeout(MAPPING_TIMEOUT_SECONDS):
             # Reuse the reference budget even on cache hits. UniProt is checked afresh:
             # cached SIFTS cannot vouch for the current full reference or version.
-            entry = await fetch_entry(context, accession, requester)
+            entry = await fetch_entry(context, accession, requester, token)
             if entry.sequence_version != sequence_version:
                 raise HTTPException(409, 'sifts-reference-version')
             mapping = context.sifts_cache.get(pdb_id)
@@ -77,4 +77,4 @@ async def detail(request: Request, identity: CurrentIdentity,
                  pdb_id: Annotated[str, Path(pattern=f'^{PDB_PATTERN}$')],
                  accession: Annotated[str, Query(pattern=f'^{ACCESSION_PATTERN}$')],
                  sequence_version: Annotated[int, Query(gt=0, le=2_147_483_647)]):
-    return await get_residue_mapping(context_of(request), pdb_id, accession, sequence_version, identity.id)
+    return await get_residue_mapping(context_of(request), pdb_id, accession, sequence_version, identity.id, bearer_token(request))

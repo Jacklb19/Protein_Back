@@ -271,6 +271,7 @@ def summary_message(summary: SummaryModel) -> project_pb.ProjectSummary:
         create_time=timestamp(summary.created_at),
         update_time=timestamp(summary.updated_at),
         preview=preview_message(preview),
+        share_expire_time=timestamp(summary.share_expires_at),
     )
 
 
@@ -298,7 +299,7 @@ def preview_message(preview: ProjectPreview | None) -> project_pb.ProjectPreview
 
 
 def version_message(version: VersionModel) -> project_pb.ProjectVersion:
-    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview))
+    return project_pb.ProjectVersion(id=str(version.id), save_time=timestamp(version.saved_at), preview=preview_message(version.preview), same_sequence=version.same_sequence)
 
 
 def share_message(share) -> project_pb.ProjectShare | None:
@@ -350,6 +351,11 @@ def entry_message(entry: EntryModel) -> reference_pb.Entry:
             reference_pb.PdbReference(id=item.id, method=item.method, resolution=item.resolution, chains=item.chains)
             for item in entry.structures
         ],
+        features=[
+            reference_pb.ProteinFeature(kind=item.kind, description=item.description, begin=item.begin, end=item.end, paired=item.paired)
+            for item in entry.features
+        ],
+        features_truncated=entry.features_truncated,
     )
 
 

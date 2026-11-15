@@ -21,8 +21,10 @@ from pydantic import Field
 
 from .config import ASSISTANT_REMAINING_HEADER
 from .context import ServiceContext, context_of
-from .identity import CurrentIdentity
+from .identity import CurrentIdentity, bearer_token
 from .projects import Contract
+from .spend import Budget, remaining, spend
+from .spend_config import DAY_SECONDS, MINUTE_SECONDS, SCOPE_ASSISTANT
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 ASSISTANT_PROVIDER = "groq"
@@ -289,15 +291,23 @@ async def complete(context: ServiceContext, request: InterpretRequest) -> str:
     return text
 
 
-async def interpret(context: ServiceContext, request: InterpretRequest, requester: str) -> Interpretation:
+def assistant_budget(context: ServiceContext) -> Budget:
+    settings = context.settings
+    return Budget(SCOPE_ASSISTANT, settings.assistant_requests_per_minute, MINUTE_SECONDS, settings.assistant_requests_per_day, DAY_SECONDS)
+
+
+async def interpret(context: ServiceContext, request: InterpretRequest, requester: str, token: str) -> tuple[Interpretation, int | None]:
+    """The reading and what the caller may still ask for this minute (None without a per-account budget)."""
     if not context.settings.assistant_enabled:
         raise HTTPException(503, "assistant-not-configured")
+    budget = assistant_budget(context)
     key = cache_key(request, requester, context.settings.assistant_model, PROMPT_VERSION)
     cached = context.assistant_cache.get(key)
     if cached is not None:
-        # The budget bounds what this process forwards to the provider; a reading served again forwards nothing.
-        return cached
-    if not context.assistant_limiter.allow(requester):
+        # The budget bounds what reaches the provider; a reading served again forwards nothing and spends nothing.
+        return cached, await remaining(context, token, requester, budget, context.assistant_limiter)
+    spent = await spend(context, token, requester, budget, context.assistant_limiter, context.assistant_daily_limiter)
+    if not spent.allowed:
         raise HTTPException(429, "assistant-rate-limit")
     text = await complete(context, request)
     reasons = refusal(text, request)
@@ -312,13 +322,12 @@ async def interpret(context: ServiceContext, request: InterpretRequest, requeste
     interpretation = Interpretation(text=text, model=context.settings.assistant_model, created_at=datetime.now(timezone.utc).isoformat())
     # Stored only after the verifier accepted it: refusals and provider errors raised above never reach here.
     context.assistant_cache.put(key, interpretation)
-    return interpretation
+    return interpretation, spent.remaining
 
 
-def remaining_header(context: ServiceContext, requester: str) -> dict[str, str]:
+def remaining_header(left: int | None) -> dict[str, str]:
     """What the caller may still ask for this minute, as a response header; empty without a budget."""
-    remaining = context.assistant_limiter.remaining(requester)
-    return {} if remaining is None else {ASSISTANT_REMAINING_HEADER: str(remaining)}
+    return {} if left is None else {ASSISTANT_REMAINING_HEADER: str(left)}
 
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -327,7 +336,6 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 @router.post("/interpret", response_model=Interpretation)
 async def interpret_route(request: Request, response: Response, identity: CurrentIdentity, body: InterpretRequest) -> Interpretation:
     response.headers["Cache-Control"] = "no-store"
-    context = context_of(request)
-    interpretation = await interpret(context, body, identity.id)
-    response.headers.update(remaining_header(context, identity.id))
+    interpretation, left = await interpret(context_of(request), body, identity.id, bearer_token(request))
+    response.headers.update(remaining_header(left))
     return interpretation

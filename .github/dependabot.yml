@@ -1,0 +1,17 @@
+# Weekly dependency notices against dev. Python pins live in requirements.in and requirements-dev.in;
+# a pull request that only touches requirements*.txt fails the lockfile check in CI until the .in file
+# is updated and both lockfiles are recompiled with hashes (see the header of each .in file).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

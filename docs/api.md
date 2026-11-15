@@ -1,5 +1,51 @@
 # Contratos de API
 
+## Anotaciones posicionales de una ficha — implementación local del 14 nov 2026
+
+`GET /v1/uniprot/{accession}` y `ReferenceService/GetEntry` añaden `features` y `featuresTruncated` (`Entry.features`, `Entry.features_truncated`). Cada anotación lleva `kind` (sitio activo, unión, sitio, unión a ADN, dedo de zinc, motivo, dominio, región, transmembrana, señal, péptido de tránsito, propéptido, cadena, péptido, puente disulfuro, residuo modificado, glicosilación o variante natural), `description` en el idioma de la fuente (hasta 400 caracteres; para una variante empieza por el cambio, para un sitio de unión por el ligando), `begin`, `end` y `paired` (verdadero cuando nombra dos residuos unidos, no el tramo entre ellos).
+
+- Solo se devuelven anotaciones con los dos extremos exactos y dentro de la secuencia; lo incierto se omite, no se aproxima.
+- Límites: 60 por tipo y 300 en total, ordenadas por tipo y posición; `featuresTruncated` avisa de que la ficha tenía más.
+- Campos aditivos, sin migración ni petición nueva al proveedor: salen de la misma respuesta de UniProt. Orden de publicación: backend, repin del frontend, frontend.
+
+## Duración y estado de los enlaces de solo lectura — implementación local del 14 nov 2026
+
+Migración `20261114000000_share_duration.sql` (**solo local, sin aplicar**; va después de `20261113000002_mfa_policies.sql`, cuya comprobación de MFA conserva).
+
+- Crear un enlace acepta una duración de 1, 7 o 30 días (`PROJECT_SHARE_DURATIONS_DAYS`, repetida en la migración y comprobada por prueba): `POST /v1/projects/{id}/share` con `{"durationDays"}` y `CreateProjectShareRequest.duration_days`. Sin duración (cuerpo vacío o 0 en RPC) siguen siendo 7 días; cualquier otra es 422 / `INVALID_ARGUMENT` sin llegar a la base. En SQL, `pf_share_project(uuid, text, integer)` y la forma de dos argumentos delega con 7.
+- El listado lleva la caducidad del enlace activo: `shareExpiresAt` en REST y `ProjectSummary.share_expire_time` en RPC, ausente si no hay enlace o caducó. Sale de la función nueva `pf_list_projects_with_links`, que reutiliza `pf_list_projects` y su orden: una columna nueva en la función actual rompería la API publicada, que rechaza campos desconocidos.
+- Orden de publicación: migración, backend, repin del frontend, frontend.
+
+## MFA en RLS — implementación local del 13 nov 2026
+
+Migración `20261113000002_mfa_policies.sql` (**solo local, sin aplicar en Supabase**). Variante opt-in de la guía MFA de Supabase: una sesión necesita `aal2` solo si su cuenta tiene un factor `verified`; sin factor (o con uno sin verificar) todo sigue igual en `aal1`. Políticas `as restrictive` para `authenticated` en `projects`, `analyses`, `reports`, `project_versions`, `project_shares` y `storage.objects` del bucket `reports`; no conceden nada, solo estrechan las políticas del propietario. La comprobación vive en `pf_session_meets_mfa()` (`security definer`), para no depender de que `authenticated` pueda leer `auth.mfa_factors`; un JWT sin `aal` cuenta como `aal1`.
+
+- Las funciones `security definer` saltan RLS, así que `pf_share_project`, `pf_unshare_project` y `pf_keep_project_version` se redefinen con la misma comprobación (`PT401 MFA required`); sin ella, una sesión `aal1` de una cuenta con factor podría crear un enlace y leer su proyecto sin sesión. `pf_shared_project` (anónima) y `pf_spend` (solo el propio presupuesto) no la necesitan.
+- La API ya rechaza esas sesiones antes (`mfa-required`, `app/identity.py`); esto cubre las llamadas directas a PostgREST y Storage con la clave pública.
+- Sin comprobar contra Supabase real: que `postgres` (dueño de la función) pueda leer `auth.mfa_factors` y que `auth.jwt()` lleve `aal`. Las pruebas emulan ambos en `tests/postgres_bootstrap.sql`.
+
+## Presupuesto compartido — implementación local del 13 nov 2026
+
+Migración `20261113000001_shared_budget.sql` (**solo local, sin aplicar en Supabase**) y `SHARED_BUDGET_ENABLED=enabled` (apagado por omisión). Con la bandera, PostgreSQL es la fuente de verdad del presupuesto por cuenta del asistente, UniProt (búsqueda, ficha y mapeo de residuos) y predicción: `pf_spend` cuenta una ventana por cuenta y ámbito en una sola sentencia atómica (la ventana empieza con la primera petición, como el contador anterior) y, si se pide, una ventana común a todos. La API la llama con el JWT de quien pide y la clave pública: cobra a `auth.uid()` y a nadie más. Tabla `spend_windows` privada (sin permisos ni políticas; solo las funciones `security definer`).
+
+- Asistente: `ASSISTANT_REQUESTS_PER_MINUTE` por cuenta y `ASSISTANT_REQUESTS_PER_DAY` para todas las cuentas juntas en 24 h (0 = sin tope, valor por omisión). Un acierto de caché no gasta y `X-Assistant-Remaining` se lee con `pf_spend_remaining`; las consultas inválidas se rechazan antes de gastar.
+- UniProt: `UNIPROT_REQUESTS_PER_MINUTE` por cuenta. Predicción: 1 por minuto por cuenta y 3 por minuto en total, ahora entre instancias; la puerta en memoria de una petición a la vez se mantiene.
+- Techos en SQL (60, 120 y 3 por ventana; 100000 para la ventana común): quien llame a `pf_spend` directamente solo gasta su presupuesto y no puede inflar la ventana común por encima de ese ritmo. Un valor de entorno mayor se recorta al techo.
+- **Si la base no responde** (red, tiempo, migración sin aplicar, respuesta inesperada), cada proceso decide con sus contadores en memoria, como antes, y lo registra sin datos. Decisión explícita: no se falla cerrado porque los proveedores son públicos y gratuitos con sus propios límites, el contador en memoria sigue acotando cada instancia y una caída de la base apagaría el asistente, UniProt y la predicción para todos. Un token inválido nunca es respaldo: sigue siendo 401.
+- El límite por dirección de `/v1/shared` sigue en memoria.
+
+Orden de activación: aplicar la migración, definir `SHARED_BUDGET_ENABLED=enabled` (y, si se quiere, `ASSISTANT_REQUESTS_PER_DAY`) en Vercel y redesplegar. Las filas de cuentas borradas quedan (una por ámbito, sin datos personales salvo el identificador).
+
+## Cuota de proyectos por cuenta — implementación local del 13 nov 2026
+
+Migración `20261113000000_project_quota.sql` (**solo local, sin aplicar en Supabase**). Cada cuenta puede crear hasta 50 proyectos (`PROJECT_LIMIT` en `app/project_config.py`, repetido en la migración y comprobado por prueba). Un disparador `before insert` en `projects` cuenta bajo un bloqueo consultivo por propietario, como la cuota de informes, así que dos creaciones simultáneas no ocupan a la vez la última plaza. Afecta a `pf_save_project` y a cualquier inserción directa; nunca a actualizaciones: una cuenta que ya supere el límite conserva y edita sus proyectos, y borrar uno libera una plaza. Repetir una creación con un `requestId` ya guardado devuelve ese proyecto aunque la cuenta esté en el límite.
+
+- `POST /v1/projects`: 413 `project-quota-exceeded`. `ProjectService/CreateProject`: `RESOURCE_EXHAUSTED` con el mismo mensaje. El mensaje SQL es fijo (`Project quota exceeded`) y no lleva datos.
+- El frontend lo traduce a `project-quota` y lo muestra donde ya muestra los errores de guardado; la cola sin conexión no lo reintenta. Un frontend anterior lo vería como límite de consultas y lo reintentaría tres veces antes de dejarlo a la persona.
+## Versiones comparadas con la actual — implementación local del 14 nov 2026
+
+Migración `20261114000001_version_changes.sql` (**solo local, sin aplicar**). Cada versión anterior lleva `sameSequence` (REST) / `ProjectVersion.same_sequence` (RPC, `optional`): si su secuencia es idéntica a la guardada ahora, comparada entera en SQL porque la vista previa solo trae un prefijo. Sale de la función nueva `pf_list_project_versions_compared` (invoker, RLS del propietario); no se añade a `pf_list_project_versions` porque la API publicada rechaza campos desconocidos. Sin servidor nuevo el campo queda sin valor y el cliente no afirma nada sobre la secuencia. Orden: migración, backend, repin, frontend.
+
 ## Enlaces de solo lectura — implementación local del 11 nov 2026
 
 Migración `20261111000000_project_shares.sql` (**solo local, sin aplicar en Supabase**). Un enlace por proyecto; caduca a los 7 días (`PROJECT_SHARE_LIFETIME_DAYS`, repetido en la migración y comprobado por prueba).

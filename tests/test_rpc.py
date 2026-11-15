@@ -97,7 +97,7 @@ class RpcTests(unittest.TestCase):
 
     def test_listing_uses_owner_filter_and_opaque_page_tokens(self):
         def data(request):
-            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects")
+            self.assertEqual(request.url.path, "/rest/v1/rpc/pf_list_projects_with_links")
             self.assertNotIn("owner_id", json.loads(request.content))
             row = {"id": PROJECT, "name": "Test", "status": "draft", "created_at": DATE, "updated_at": DATE}
             return httpx.Response(200, json=[row, row])
@@ -205,6 +205,15 @@ class RpcTests(unittest.TestCase):
                 response = self.call(client, f"{PROJECTS}/UpdateProject", update, TOKEN)
                 self.assertEqual(response.json()["code"], expected)
                 self.assertNotIn("private", response.text)
+
+    def test_a_reference_entry_carries_its_positional_annotations(self):
+        entry = {"primaryAccession": "P01308", "entryType": "UniProtKB reviewed (Swiss-Prot)", "proteinDescription": {"recommendedName": {"fullName": {"value": "Insulin"}}}, "organism": {"scientificName": "Homo sapiens"}, "sequence": {"length": 3, "value": "ACD"}, "entryAudit": {"entryVersion": 2, "sequenceVersion": 1},
+                 "features": [{"type": "Disulfide bond", "location": {"start": {"value": 1, "modifier": "EXACT"}, "end": {"value": 3, "modifier": "EXACT"}}, "description": "Interchain"}]}
+        with self.client(lambda _: httpx.Response(200, json=entry)) as client:
+            response = self.call(client, f"{REFERENCE}/GetEntry", {"accession": "P01308"}, TOKEN)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["entry"]["features"], [{"kind": "disulfide", "description": "Interchain", "begin": 1, "end": 3, "paired": True}])
+        self.assertNotIn("featuresTruncated", response.json()["entry"])
 
     def test_reference_entries_are_validated(self):
         with self.client(lambda _: self.fail("Invalid accession reached UniProt")) as client:

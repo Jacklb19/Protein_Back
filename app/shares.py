@@ -14,11 +14,14 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .context import ServiceContext, context_of
 from .identity import CurrentIdentity
-from .project_config import PROJECT_SHARE_TOKEN_BYTES, PROJECT_SHARE_TOKEN_MAX_LENGTH, PROJECT_SHARE_TOKEN_PATTERN
+from .project_config import (
+    PROJECT_SHARE_DURATIONS_DAYS, PROJECT_SHARE_LIFETIME_DAYS, PROJECT_SHARE_TOKEN_BYTES, PROJECT_SHARE_TOKEN_MAX_LENGTH,
+    PROJECT_SHARE_TOKEN_PATTERN,
+)
 from .projects import Contract, Token, Workspace, data_request
 
 TOKEN = re.compile(PROJECT_SHARE_TOKEN_PATTERN)
@@ -38,6 +41,19 @@ class CreatedShare(Contract):
 
 class ShareState(Contract):
     share: ProjectShare | None = None
+
+
+class ShareRequest(Contract):
+    """How long the new link lasts; one of PROJECT_SHARE_DURATIONS_DAYS."""
+
+    duration_days: int = PROJECT_SHARE_LIFETIME_DAYS
+
+    @field_validator("duration_days")
+    @classmethod
+    def allowed_duration(cls, value: int) -> int:
+        if value not in PROJECT_SHARE_DURATIONS_DAYS:
+            raise ValueError("Unsupported link duration")
+        return value
 
 
 class SharedRequest(Contract):
@@ -69,9 +85,9 @@ def _share(value) -> ProjectShare:
         raise HTTPException(502, "projects-invalid-response") from error
 
 
-async def create_share(context: ServiceContext, token: str, project_id: UUID) -> CreatedShare:
+async def create_share(context: ServiceContext, token: str, project_id: UUID, days: int = PROJECT_SHARE_LIFETIME_DAYS) -> CreatedShare:
     link = secrets.token_urlsafe(PROJECT_SHARE_TOKEN_BYTES)
-    stored = await data_request(context, token, "POST", "rpc/pf_share_project", json={"p_id": str(project_id), "p_token_sha256": token_hash(link)})
+    stored = await data_request(context, token, "POST", "rpc/pf_share_project", json={"p_id": str(project_id), "p_token_sha256": token_hash(link), "p_days": days})
     return CreatedShare(token=link, share=_share(stored))
 
 
@@ -104,8 +120,9 @@ router = APIRouter(tags=["shares"])
 
 
 @router.post("/projects/{project_id}/share", response_model=CreatedShare, status_code=201)
-async def create_share_route(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token):
-    return await create_share(context_of(request), token, project_id)
+async def create_share_route(project_id: UUID, request: Request, _identity: CurrentIdentity, token: Token, body: ShareRequest | None = None):
+    # An empty body, as older clients send, keeps the default duration.
+    return await create_share(context_of(request), token, project_id, (body or ShareRequest()).duration_days)
 
 
 @router.get("/projects/{project_id}/share", response_model=ShareState)

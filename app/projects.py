@@ -18,8 +18,8 @@ from .identity import CurrentIdentity, bearer_token
 from .generator_history import MAX_RUNS, GeneratorHistorySnapshot
 from .laboratory import LaboratorySnapshot, laboratory_document
 from .project_config import (
-    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT,
-    PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
+    DEFAULT_PROJECT_ORDER, PROJECT_LIST_RPC, PROJECT_NAME_LENGTH, PROJECT_PREVIEW_RESIDUES, PROJECT_QUOTA_CODE, PROJECT_QUOTA_MESSAGE,
+    PROJECT_RESTORE_RPC, PROJECT_VERSION_LIMIT, PROJECT_VERSIONS_RPC, VERSION_NOT_FOUND_MESSAGE,
 )
 
 logger = logging.getLogger(__name__)
@@ -258,6 +258,8 @@ class ProjectSummary(Contract):
     created_at: str
     updated_at: str
     preview: ProjectPreview | None = None
+    # When the project's read-only link stops working; absent without an unexpired link.
+    share_expires_at: str | None = None
 
 
 class Project(ProjectSummary):
@@ -276,6 +278,8 @@ class ProjectVersion(Contract):
     id: UUID
     saved_at: str
     preview: ProjectPreview | None = None
+    # Whether its sequence equals the one stored now, compared in full; absent from older servers.
+    same_sequence: bool | None = None
 
 
 class ProjectVersionList(Contract):
@@ -326,6 +330,9 @@ async def data_request(context: ServiceContext, token: str | None, method: str, 
             if message == REQUIRES_CURRENT_CLIENT_MESSAGE:
                 raise HTTPException(409, "project-requires-current-client")
             raise HTTPException(409, "project-conflict")
+        if code == "PT413" and message == PROJECT_QUOTA_MESSAGE:
+            # Same status and RPC code (RESOURCE_EXHAUSTED) as the report quota; the detail tells them apart.
+            raise HTTPException(413, PROJECT_QUOTA_CODE)
         if code == "PT422":
             raise HTTPException(422, "validation")
         if code == "PT404":

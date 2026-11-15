@@ -247,12 +247,35 @@ class LiveSession:
             wake.clear()
 
 
+def offered_subprotocols(websocket: WebSocket) -> list[str]:
+    """The subprotocols the client offered. Servers usually parse them into the scope; a host that does not
+    still forwards the Sec-WebSocket-Protocol header, so it is read from there too."""
+    parsed = list(websocket.scope.get("subprotocols") or [])
+    header = websocket.headers.get("sec-websocket-protocol", "")
+    return parsed + [value.strip() for value in header.split(",") if value.strip() and value.strip() not in parsed]
+
+
+def refusal(settings: Settings, origin: str, offered: list[str]) -> str | None:
+    """Why a handshake is refused, as a fixed word for the logs; None when it may open."""
+    if not settings.live_enabled:
+        return "disabled"
+    if not settings.identity_enabled:
+        return "identity-not-configured"
+    if origin not in settings.allowed_origins:
+        return "origin"
+    if LIVE_SUBPROTOCOL not in offered:
+        return "subprotocol"
+    return None
+
+
 @router.websocket(LIVE_PATH)
 async def live(websocket: WebSocket) -> None:
     settings: Settings = websocket.app.state.settings
     origin = websocket.headers.get("origin", "").rstrip("/")
-    offered = websocket.scope.get("subprotocols", [])
-    if not settings.live_enabled or not settings.identity_enabled or origin not in settings.allowed_origins or LIVE_SUBPROTOCOL not in offered:
+    reason = refusal(settings, origin, offered_subprotocols(websocket))
+    if reason is not None:
+        # The reason only, never the origin or anything else the client sent.
+        logger.info("Live handshake refused: %s", reason)
         # Closing before accepting answers the handshake with 403 and opens nothing.
         await websocket.close(code=CLOSE_POLICY_VIOLATION)
         return

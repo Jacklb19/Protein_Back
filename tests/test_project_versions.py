@@ -51,7 +51,7 @@ class ProjectVersionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["items"][0]["id"], VERSION)
         self.assertEqual(response.json()["items"][0]["preview"]["sequenceLength"], 4)
-        self.assertEqual(self.sent, [("/rest/v1/rpc/pf_list_project_versions", {"p_id": PROJECT, "p_prefix_length": project_config.PROJECT_PREVIEW_RESIDUES})])
+        self.assertEqual(self.sent, [("/rest/v1/rpc/pf_list_project_versions_compared", {"p_id": PROJECT, "p_prefix_length": project_config.PROJECT_PREVIEW_RESIDUES})])
         self.assertEqual(invalid.status_code, 422)
 
     def test_a_listing_beyond_the_limit_or_without_its_fields_is_refused(self):
@@ -82,7 +82,7 @@ class ProjectVersionTests(unittest.TestCase):
 
     def test_rpc_lists_and_restores_like_rest(self):
         def data(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=[ROW] if request.url.path.endswith("pf_list_project_versions") else DOCUMENT)
+            return httpx.Response(200, json=[ROW] if request.url.path.endswith("pf_list_project_versions_compared") else DOCUMENT)
         with self.client(data) as client:
             listed = client.post(f"{PROJECTS}/ListProjectVersions", headers={**CONNECT, **TOKEN}, content=json.dumps({"projectId": PROJECT}))
             restored = client.post(f"{PROJECTS}/RestoreProjectVersion", headers={**CONNECT, **TOKEN}, content=json.dumps({"projectId": PROJECT, "versionId": VERSION, "expectedUpdateTime": "2026-10-12T08:00:00.123456Z"}))
@@ -105,6 +105,22 @@ class ProjectVersionTests(unittest.TestCase):
         self.assertNotRegex(sql, r"grant\s+(insert|update|delete)[^;]*project_versions")
         self.assertIn("security definer", sql.split("function public.pf_keep_project_version")[1].split("$$")[0])
 
+
+    def test_each_version_says_whether_its_sequence_is_the_current_one(self):
+        rows = [{**ROW, "sameSequence": True}, {**ROW, "id": "00000000-0000-4000-8000-000000000021", "sameSequence": False}, {**ROW, "id": "00000000-0000-4000-8000-000000000022"}]
+        with self.client(lambda _: httpx.Response(200, json=rows)) as client:
+            rest = client.get(f"/v1/projects/{PROJECT}/versions", headers=TOKEN).json()["items"]
+            rpc = client.post(f"{PROJECTS}/ListProjectVersions", headers={**CONNECT, **TOKEN}, content=json.dumps({"projectId": PROJECT})).json()["versions"]
+        self.assertEqual([item["sameSequence"] for item in rest], [True, False, None])
+        # Unset stays unset over RPC, so a client can tell an older server from a different sequence.
+        self.assertEqual([item.get("sameSequence") for item in rpc], [True, False, None])
+
+    def test_the_comparison_reads_the_full_sequences_under_the_owner(self):
+        sql = (MIGRATION.parent / "20261114000001_version_changes.sql").read_text(encoding="utf-8")
+        self.assertIn("'sameSequence', v.active_sequence = p.active_sequence", sql)
+        self.assertIn("security invoker", sql)
+        self.assertIn("v.owner_id = (select auth.uid())", sql)
+        self.assertNotIn("to anon", sql)
 
 if __name__ == "__main__":
     unittest.main()
