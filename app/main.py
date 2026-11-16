@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .config import API_DOCS_PATHS, API_PREFIX, ASSISTANT_REMAINING_HEADER, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
+from .config import API_DOCS_PATHS, API_PREFIX, API_TITLE, API_VERSION, ASSISTANT_REMAINING_HEADER, REQUEST_ID_HEADER, RPC_REQUEST_HEADERS, RPC_RESPONSE_HEADERS, Settings, load_settings
 from .correlation import Correlation
 from .security_headers import SecurityHeaders
 from .identity import CurrentIdentity
@@ -30,9 +30,6 @@ from .rpc.router import RpcRouter, rpc_applications
 from .rate_limit import FixedWindowLimiter
 from .spend_config import DAY_SECONDS
 from .problems import http_exception_handler, unexpected_exception_handler, validation_exception_handler
-
-API_TITLE = "ProteinForge API"
-API_VERSION = "0.1.0"
 
 
 class Health(BaseModel):

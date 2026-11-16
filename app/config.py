@@ -11,6 +11,8 @@ from dotenv import dotenv_values
 from .live_config import DEFAULT_LIVE_MAX_CONNECTION_SECONDS, DEFAULT_LIVE_POLL_SECONDS, LiveLimits
 
 API_PREFIX = "/v1"
+API_TITLE = "ProteinForge API"
+API_VERSION = "0.1.0"
 SUPABASE_AUTH_PATH = "/auth/v1"
 SUPABASE_STORAGE_PATH = "/storage/v1"
 REQUEST_ID_HEADER = "X-Request-Id"
