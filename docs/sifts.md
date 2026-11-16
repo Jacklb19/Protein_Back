@@ -1,8 +1,8 @@
 # Correspondencias SIFTS autenticadas
 
-Implementadas localmente el **25 de octubre de 2026** tras la aprobación expresa del propietario de la maqueta y el suministro SIFTS. `app/sifts.py` adquiere/normaliza fuentes; `app/residue_mapping.py` sirve la misma función de dominio en REST y ReferenceService. Sin tablas, migraciones, cambio de CSP, modelos ni predicción. La integración visual aprobada se completó y verificó localmente el 26; publicación pendiente.
+`app/sifts.py` adquiere y normaliza las fuentes; `app/residue_mapping.py` sirve la misma función de dominio en REST y en `ReferenceService`. Sin tablas ni migraciones. El cliente que lo consume está descrito en la [documentación de referencias del frontend](https://github.com/Jacklb19/ProteinForge/blob/main/docs/references.md).
 
-## Contrato aprobado e implementado localmente
+## Contrato
 
 `GET /v1/pdb/{pdb_id}/residue-mapping?accession=P01308&sequence_version=1` y `ReferenceService/GetResidueMapping` requieren JWT. Petición RPC: `pdb_id`, `accession`, `sequence_version`. PDB de cuatro caracteres en mayúscula, accession canónica (sin isoformas en este contrato) y versión positiva conocida. No se recibe secuencia ni se envía identidad del usuario a los proveedores. Respuesta tipada: `mapping` v1, `reference_sequence_version` y `reference_sequence_sha256`; sus nombres JSON son camelCase. Protobuf conserva `auth_seq_id` opcional: el cliente convierte ausencia a null y conserva texto exacto. No cambia el esquema interno v1 ni los números de campos anteriores.
 
@@ -40,7 +40,7 @@ El XML SIFTS aporta correspondencias explícitas por residuo entre PDB y UniProt
 
 El listado completo debe asignar una sola entidad/cadena de autor a cada cadena interna, y una sola identidad de autor/inserción/nombre a cada posición interna. Las copias de cadenas deben coincidir en el residuo de una misma accession/posición UniProt. La ausencia anotada pertenece a la dirección estructural y debe coincidir aunque cambie la referencia. Se conservan referencias distintas y segmentos solapados coincidentes, sin convertir diferencias legítimas entre accessions en contradicciones.
 
-La función de adquisición no certifica por sí sola la versión/hash de UniProt; esa comprobación pertenece al servicio descrito arriba. Las filas no validan la identidad de posiciones ajenas a su cobertura. El [núcleo frontend](../../frontend/docs/references.md) comprueba el digest completo antes de habilitar selección; su conexión visual está en desarrollo.
+La función de adquisición no certifica por sí sola la versión/hash de UniProt; esa comprobación pertenece al servicio descrito arriba. Las filas no validan la identidad de posiciones ajenas a su cobertura. El [núcleo del frontend](https://github.com/Jacklb19/ProteinForge/blob/main/docs/references.md) comprueba el digest completo antes de habilitar la selección.
 
 ## Límites y transporte
 
@@ -52,39 +52,15 @@ Las categorías `SiftsError` son códigos estables, sin cuerpos de proveedor ni 
 
 Estos límites de **adquisición** no amplían el máximo global de **2.000.000 bytes por mensaje RPC**. El servicio comprueba el tamaño final y lo rechaza expresamente; no trunca filas. La caché es únicamente local al proceso.
 
-## Comprobación y repetición
+## Pruebas y comprobación manual
 
-22 pruebas con transporte simulado: reconciliación de los [ocho residuos públicos reducidos](../tests/fixtures/sifts/README.md), cadenas repetidas, identificadores de autor/inserciones/isoformas, ausencias, datos contradictorios, segmentos solapados, estructura de XML, límites, entidades/DTD, integridad gzip, credenciales por defecto, redirecciones, JSON inválido, plazo y cancelación. No usan cuentas ni proveedores reales.
+Pruebas con transporte simulado (`tests/test_sifts.py`): reconciliación de los [ocho residuos públicos reducidos](../tests/fixtures/sifts/README.md), cadenas repetidas, identificadores de autor, inserciones e isoformas, ausencias, datos contradictorios, segmentos solapados, estructura de XML, límites, entidades y DTD, integridad gzip, credenciales por defecto, redirecciones, JSON inválido, plazo y cancelación. También cubren REST, Connect y gRPC-Web, la identidad antes del proveedor, la cuota compartida, la referencia completa y sus versiones, la caché y su expiración, las respuestas demasiado grandes y el tiempo agotado con cierre del flujo. No usan cuentas ni proveedores reales.
 
-Ejecutar desde backend:
-
-```powershell
+```bash
 .venv/Scripts/python.exe -m unittest discover -s tests -p test_sifts.py -v
 .venv/Scripts/python.exe -m scripts.sifts_smoke 1TRZ --xml tests/fixtures/sifts/1trz.xml --listing tests/fixtures/sifts/1trz.json
 ```
 
-La comprobación manual pública (dos GET, sin credenciales ni secuencias privadas) se ejecuta deliberadamente con:
+La comprobación manual pública (dos GET, sin credenciales ni secuencias privadas) se ejecuta de forma deliberada con `python -m scripts.sifts_smoke 1TRZ`. La utilidad verifica los certificados con el almacén del sistema, no carga `.env`, guarda el documento en `artifacts/sifts/1trz.mapping.json` (ignorado por Git) e imprime solo un resumen, el tamaño y el hash. No es una prueba de carga. Con 1TRZ y P01308 obtiene 102 correspondencias de las cadenas A, B, C y D; `P01308:90` conserva las alternativas A y C. El documento resultante pasa el esquema v1 del frontend.
 
-```powershell
-.venv/Scripts/python.exe -m scripts.sifts_smoke 1TRZ
-```
-
-La utilidad usa certificados/nombre de host verificados con el almacén de confianza del sistema; no carga `.env`. Guarda el documento en `artifacts/sifts/1trz.mapping.json`, ignorado, e imprime solo resumen, tamaño y hash. No es una prueba de carga.
-
-El 25 de octubre se obtuvieron **102 correspondencias** para 1TRZ/P01308, cadenas A/B/C/D, documento SIFTS de 2026-10-18. El JSON de esa lectura pasó el esquema v1 real del frontend. P01308:90 conserva las alternativas A/C; el ensayo del enlace con un subconjunto **sintético** de direcciones dio ambigüedad sin cadena y selección única al elegir A. No acredita un visor conectado al backend ni una nueva observación de coordenadas. Las pruebas previas del frontend sí analizaron su BinaryCIF público real.
-
-Las validaciones adicionales se comprobaron después contra el XML/listado completos ya descargados: conservan las 102 filas sin nuevas solicitudes. Batería backend de este cierre: 93 pruebas totales, 81 ejecutadas correctamente y 12 SQL omitidas sin base configurada.
-
-Después de activar el servicio local: 104 pruebas totales, 92 ejecutadas correctamente y 12 SQL omitidas. Incluyen REST, Connect y gRPC-Web, identidad antes de proveedor, cuota compartida, referencia completa/versiones, caché/expiración, respuestas demasiado grandes y timeout con cierre del flujo. UniProt ahora descarga en bloques acotados antes de analizar, con peticiones sin credenciales heredadas/redirecciones y representación HTTP sin compresión. Buf lint y regeneración reproducibles; dos espacios finales emitidos por el generador Python se conservan sin editar código generado a mano.
-
-Smoke de Connect local con **identidad simulada** y tres fuentes HTTPS reales (UniProt, SIFTS XML y PDBe): HTTP200,102filas,SV1 y hash completo99603f8f…; JSONprotobuf16.713bytes. Respuesta ignorada en `artifacts/sifts/1trz.rpc.json`. No prueba JWT del propietario ni producción. Smoke offline del frontend con coordenadas reales BinaryCIF:102recorridos posición→loci→posición,51posiciones UniProt únicas; cambio fuera de cobertura rechazado porhash. No nueva inferencia ni cuenta externa.
-
-La batería completa del backend se ejecuta al cerrar; las pruebas PostgreSQL sin base configurada se declaran omitidas y no equivalen a verificación SQL nueva. No hay cambios de acceso a datos o migraciones en este módulo.
-
-## Pendiente para cerrar S5
-
-La interfaz Biblioteca/Analizar ya está integrada: selección bidireccional, cadena explícita, versión/hash completos e invalidación al editar o cambiar referencia. Verificación combinada: 436 unitarias y 76 recorridos Chromium del frontend, incluidos selección/vigencia con identidad/RPC simulados y coordenadas reales, además de PWA. [Estado y límites](../../frontend/docs/plan-desarrollo.md).
-
-Queda consulta con identidad real dentro de su alcance autorizado. No hace falta repetir migraciones. Publicar requiere autorización nueva: backend con GetResidueMapping primero, después actualizar el pin de buf.gen.yaml y regenerar/confirmar frontend, al final publicar frontend. El pin remoto actual todavía no tiene el método.
-
-Fuentes primarias: [SIFTS](https://www.ebi.ac.uk/pdbe/docs/sifts/), [PDBe API](https://www.ebi.ac.uk/pdbe/api/doc/pdb.html), [HTTPX streaming](https://www.python-httpx.org/async/#streaming-responses), [seguridad XML de Python](https://docs.python.org/3/library/xml.html#xml-security), [descompresión acotada zlib](https://docs.python.org/3/library/zlib.html#zlib.Decompress.decompress).
+Fuentes primarias: [SIFTS](https://www.ebi.ac.uk/pdbe/docs/sifts/), [PDBe API](https://www.ebi.ac.uk/pdbe/api/doc/pdb.html), [HTTPX streaming](https://www.python-httpx.org/async/#streaming-responses), [seguridad XML de Python](https://docs.python.org/3/library/xml.html#xml-security) y [descompresión acotada de zlib](https://docs.python.org/3/library/zlib.html#zlib.Decompress.decompress).

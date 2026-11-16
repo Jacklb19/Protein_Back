@@ -1,57 +1,138 @@
-# ProteinForge — backend
+# ProteinForge — API
 
-**Publicación autorizada, 1 nov 2026:** el propietario confirma que aplicó `20261030000000_structure_predictions.sql` y configuró las banderas de predicción en ambos proyectos Vercel. Son declaraciones suyas, pendientes de comprobación remota posterior. Autoriza push de dev y merge/push a main de ambos repositorios para esta entrega, con autoría exclusiva de Jacklb19. La publicación sigue el orden backend→frontend y comprueba CI/despliegues; no se declara terminada antes de observarlos. Las referencias a «solo local» y producción sin predicción inferiores describen el estado anterior.
+API de ProteinForge, un banco de trabajo web para analizar, comparar y diseñar secuencias de proteínas. Este repositorio contiene la API que autentica a las personas, guarda sus proyectos en Supabase, consulta servicios públicos (UniProt, PDBe/SIFTS) y ofrece, de forma opcional, una lectura en prosa de resultados y la predicción de estructuras. El cálculo científico ocurre en el navegador: ver el [frontend](https://github.com/Jacklb19/ProteinForge).
 
-Repositorio [Jacklb19/Protein_Back](https://github.com/Jacklb19/Protein_Back), independiente del [frontend](https://github.com/Jacklb19/ProteinForge). Contiene FastAPI, proyectos personales y migraciones Supabase. Publicados: identidad, CRUD de proyectos, guardado del laboratorio, UniProt acotado, asistente de interpretación, el [servicio SIFTS autenticado](docs/sifts.md) —comprobado en producción con P01308/1TRZ— y el [historial del generador](docs/generator-history-contract-proposal.md) sobre workspace v3. Publicado: `main` `18d9444`, con CI y Vercel correctos. La continuación local de `dev` se describe abajo; todavía no está publicada. El propietario declara haber aplicado la migración `20261027000000` el 28 de octubre, sin inspección por nuestra parte. Siguen pendientes el recorrido con JWT real, el aislamiento por ID con una segunda cuenta y la comprobación de la prosa del asistente. La producción sigue sin predicción estructural; su implementación local posterior está descrita abajo.
+- API en producción: <https://protein-back.vercel.app/v1/health>
+- Aplicación web: <https://protein-forge.vercel.app>
 
-## Continuación local
+## Stack
 
-**Continuación local, 30 oct 2026:** [predicción estructural](docs/folding.md) implementada por REST/RPC, con consentimiento, validación y opt-in desactivado; guardado sobre laboratorio v2/workspace v4 y migración solo local. 146 pruebas descubiertas: 127 ejecutadas correctas y 19 SQL omitidas sin base; las 19 SQL pasaron aparte en PostgreSQL 18 temporal. `cbff97e` era la referencia local al iniciar esta entrega; la revisión preparada se consulta con `git log -1`. Nada de esta continuación está publicado; la descripción inicial corresponde a producción y sus versiones históricas.
+| Área | Tecnología |
+|---|---|
+| Lenguaje y framework | Python 3.14, FastAPI 0.16x, Uvicorn |
+| RPC | Connect RPC (`connectrpc`): Connect, gRPC y gRPC-Web; contratos Protocol Buffers con buf |
+| HTTP | httpx 0.28, `pyqwest` |
+| Identidad y datos | Supabase: Auth, PostgreSQL con RLS, PostgREST y Storage |
+| Asistente de interpretación | Groq con `openai/gpt-oss-120b` (opcional) |
+| Calidad | unittest, coverage (mínimo del 70 %), ruff, buf y `pip-audit` |
 
-## Organización del workspace
+Las versiones exactas están en `requirements.in` (directas) y `requirements.txt` (compilado con hashes).
 
-```text
-ProteinForge/       # carpeta local, sin Git
-├── frontend/       # React/Vite y cálculos locales
-└── backend/        # este repositorio
+## Arquitectura
+
+```mermaid
+flowchart LR
+  FE[Frontend React] -- "gRPC-Web" --> API
+  CL[curl y pruebas] -- "REST o Connect" --> API
+  subgraph API[API FastAPI]
+    MW[Cabeceras, correlación y CORS] --> RT{Enrutador}
+    RT --> RPC[Servicios RPC]
+    RT --> REST[Rutas REST /v1]
+    RPC --> DOM[Funciones de dominio]
+    REST --> DOM
+  end
+  DOM -- "JWT del usuario" --> SB[(Supabase: PostgreSQL con RLS, Storage)]
+  DOM --> EXT[UniProt, PDBe y SIFTS, Groq, ESM Atlas]
 ```
 
-Comandos desde `backend/`. `dev` es desarrollo y `main` la base verificada. No es necesario tener el frontend al lado. La definición general vive en el repositorio frontend; este repositorio mantiene sus responsabilidades y contratos de API.
+Los transportes REST y RPC comparten las mismas funciones de dominio, validación y autorización. La API valida el token de Supabase Auth y reenvía ese mismo JWT a PostgREST, de modo que las políticas RLS de PostgreSQL deciden qué filas se ven; la API nunca usa la clave `service_role`. Más detalle en [arquitectura](docs/arquitectura.md).
 
-## Responsabilidad
+## Endpoints principales
 
-FastAPI gestiona identidad, autorización, CRUD de proyectos, UniProt acotado e interpretación, por REST y por gRPC (gRPC-Web para el navegador, Connect y gRPC nativo; ver [gRPC](docs/api.md#grpc)). JWT de propietario, RLS y RPC SECURITY INVOKER. SIFTS añade correspondencias explícitas, versión/hash completos, caché pública acotada y cuota compartida de referencias; predicción y Storage siguen sin integrar. Candidatos, descriptores, alineamiento e informes en navegador. Cada repositorio conserva su despliegue independiente. [Contratos](docs/api.md), [persistencia](docs/project-persistence.md), [UniProt](docs/uniprot.md).
+Prefijo `/v1`. Todo, salvo la salud y la lectura de enlaces compartidos, exige un token de Supabase Auth.
 
-## Desarrollo local
+| Ruta | Propósito |
+|---|---|
+| `GET /health`, `GET /me` | Estado del servicio e identidad |
+| `/projects` | Proyectos (CRUD), versiones y enlaces de solo lectura |
+| `GET /uniprot/search`, `GET /uniprot/{accession}` | Referencias de UniProt |
+| `GET /pdb/{pdbId}/residue-mapping` | Correspondencia SIFTS entre UniProt y PDB |
+| `POST /assistant/interpret` | Lectura en prosa de resultados |
+| `POST /predictions/fold` | Predicción de estructura (opcional) |
+| `/reports` | Informes en Storage |
+| `GET /live` | WebSocket de avisos de cambios (opcional) |
 
-Dependencias directas en `requirements.in` (FastAPI 0.142.4, uvicorn 0.54.0, httpx 0.28.1, python-dotenv 1.2.4, connectrpc 0.12.1, protobuf-py 0.6.0, pyqwest 0.12.0, wsproto 1.3.2); `requirements.txt` es su compilación con todas las transitivas y hashes (`uv pip compile`, orden en la cabecera de cada `.in`). Generación de código, Hypercorn para gRPC nativo, ruff y coverage en `requirements-dev.in` → `requirements-dev.txt`. Se edita el `.in` y se recompila; CI comprueba que coinciden, instala con `--require-hashes` y ejecuta `pip-audit`. Nunca `pyproject.toml`. Python 3.14 es el objetivo; la base se ha ejecutado con 3.13 local.
+Los mismos servicios están disponibles como `proteinforge.<paquete>.v1.<Servicio>/<Método>`. Contratos completos en [API](docs/api.md).
 
-Para Vercel, `.python-version` fija 3.14 y la detección FastAPI usa `app/main.py:app`. Configurar `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `ALLOWED_ORIGINS` en las variables del proyecto. Build/instalación/salida del framework sin overrides; no iniciar Uvicorn como comando de build. Ver [FastAPI](https://vercel.com/docs/frameworks/backend/fastapi) y [Python](https://vercel.com/docs/functions/runtimes/python/python-version). Este ajuste no verifica un despliegue remoto.
+## Estructura de carpetas
+
+```text
+app/                   # aplicación FastAPI: dominio, configuración y middleware
+├── rpc/               # servicios y enrutador RPC; gen/ es código generado por buf
+proto/                 # contratos Protocol Buffers
+supabase/migrations/   # esquema, funciones y políticas RLS de PostgreSQL
+tests/                 # pruebas de API, RPC, migraciones y SQL
+scripts/               # utilidades: pruebas SQL, carga local, comprobación de despliegue y diagnóstico
+docs/                  # documentación técnica
+```
+
+## Puesta en marcha
+
+Requisitos: Python 3.14, y para las pruebas SQL, PostgreSQL 18. Desde la raíz del repositorio:
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install --require-hashes -r requirements.txt
+# Windows
+.venv/Scripts/python -m pip install --require-hashes -r requirements-dev.txt
 .venv/Scripts/python -m uvicorn app.main:app --reload
+# Linux y macOS
+.venv/bin/python -m pip install --require-hashes -r requirements-dev.txt
+.venv/bin/python -m uvicorn app.main:app --reload
 ```
 
-`GET /v1/health` responde sin configuración. `GET /v1/me` requiere `SUPABASE_URL`, `SUPABASE_ANON_KEY` y un token Bearer de Supabase Auth; sin configuración devuelve 503. La aplicación carga automáticamente el `.env` de la raíz de este repositorio. Las variables del proceso tienen prioridad; no se modifica el entorno ni se buscan archivos en carpetas superiores. La configuración explícita de pruebas no lee archivos locales. CORS se limita a `ALLOWED_ORIGINS`. `UNIPROT_REQUESTS_PER_MINUTE` acota por identidad las consultas que el proceso reenvía a UniProt (20 por omisión; 0 las deja sin presupuesto). `/docs`, `/redoc` y `/openapi.json` solo se sirven con `API_DOCS_ENABLED=enabled` (para desarrollo local; vacío en producción). `GROQ_API_KEY` activa el asistente de interpretación; `ASSISTANT_MODEL` y `ASSISTANT_REQUESTS_PER_MINUTE` (6 por omisión) lo ajustan. Ver [asistente](docs/assistant.md).
+(`requirements.txt` instala solo lo necesario para ejecutar la API; `requirements-dev.txt` añade las herramientas de desarrollo.) Copiar `.env.example` a `.env` y completar las variables; la aplicación lee el `.env` de la raíz del repositorio, y las variables del proceso tienen prioridad. `GET /v1/health` responde sin configuración; `GET /v1/me` necesita `SUPABASE_URL`, `SUPABASE_ANON_KEY` y un token Bearer de Supabase Auth. `localhost` y `127.0.0.1` son orígenes distintos para CORS: `ALLOWED_ORIGINS` debe contener el exacto que usa el navegador, con puerto.
 
-El frontend ya puede comprobar `/v1/health` y `/v1/me` desde Ajustes mediante `VITE_API_BASE_URL`. Configurar en `ALLOWED_ORIGINS` el origen exacto usado en el navegador, incluido el puerto (`localhost` y `127.0.0.1` son orígenes diferentes). No crear proyectos ni aplicar migraciones como parte de esa comprobación.
+### Variables de entorno
 
-## Verificación
+Los nombres sin valores están en `.env.example`. Nunca se versiona `.env` ni una clave `service_role`.
+
+| Variable | Valor por omisión | Efecto |
+|---|---|---|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | — | Proyecto de Supabase y su clave pública. Sin ellas no hay identidad (503) |
+| `ALLOWED_ORIGINS` / `FRONTEND_ORIGIN` | — | Orígenes CORS permitidos (lista separada por comas, o uno solo) |
+| `SHARED_BUDGET_ENABLED` | apagada | `enabled` cuenta los presupuestos por cuenta en PostgreSQL, compartidos entre instancias |
+| `UNIPROT_REQUESTS_PER_MINUTE` | 20 | Consultas a UniProt por cuenta y minuto (0 las desactiva) |
+| `GROQ_API_KEY` | — | Activa el asistente; sin ella la ruta responde 503 |
+| `ASSISTANT_MODEL` | `openai/gpt-oss-120b` | Modelo de Groq |
+| `ASSISTANT_REQUESTS_PER_MINUTE` | 6 | Lecturas por cuenta y minuto (0 las desactiva) |
+| `ASSISTANT_REQUESTS_PER_DAY` | 0 | Lecturas diarias de todas las cuentas juntas (0, sin tope) |
+| `ASSISTANT_CACHE_TTL_SECONDS`, `ASSISTANT_CACHE_MAX_ENTRIES` | 300, 256 | Caché de lecturas verificadas (0 la desactiva) |
+| `FOLDING_ENABLED` | apagada | `enabled` activa la predicción con ESM Atlas |
+| `API_DOCS_ENABLED` | apagada | `enabled` sirve `/docs`, `/redoc` y `/openapi.json`; vacío en producción |
+| `LIVE_ENABLED` | apagada | `enabled` sirve el WebSocket `/v1/live` |
+| `LIVE_POLL_SECONDS`, `LIVE_MAX_CONNECTION_SECONDS` | 5, 240 | Frecuencia de lectura y duración máxima de cada conexión |
+| `SHARED_REQUESTS_PER_MINUTE` | 30 | Lecturas de enlaces compartidos por dirección y minuto, por proceso (0 las desactiva) |
+
+## Migraciones
+
+`supabase/migrations/` contiene el esquema, las funciones `pf_*` y las políticas RLS, y se aplican en orden de nombre sobre el proyecto de Supabase con la CLI o con `psql` (cada migración es idempotente). La lista y su contenido están en [persistencia de proyectos](docs/project-persistence.md#migraciones). Cuando un cambio afecta al contrato, el orden de despliegue es migración → API → frontend.
+
+## Pruebas
 
 ```bash
-python -m unittest discover -s tests -v
+.venv/Scripts/python -m unittest discover -s tests    # Linux y macOS: .venv/bin/python
+.venv/Scripts/ruff check .
 ```
 
-Cubre auditoría estática, API REST y RPC, proyectos y adaptadores con transporte simulado. `./scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en PostgreSQL temporal real. Ver [contrato, evidencia y activación](docs/project-persistence.md). Sin base configurada, las pruebas SQL se identifican como omitidas en unittest; no equivalen a verificación de base nueva. CI ejecuta esa batería.
+- `unittest` cubre REST y RPC por los tres protocolos, la identidad, los proyectos, los servicios externos con transporte simulado y la revisión estática de las migraciones. Las pruebas SQL se omiten si no hay una base configurada.
+- Pruebas SQL (migraciones, RLS y concurrencia) con PostgreSQL 18 real. En Windows, `scripts/test-postgres.ps1` crea un clúster temporal en loopback. En otros sistemas, se levanta un PostgreSQL 18 con una base `pf_security_test` accesible en loopback, se aplica `tests/postgres_bootstrap.sql` y después todas las migraciones, y se definen `PF_TEST_DATABASE_URL` (por ejemplo `postgresql://postgres@127.0.0.1:5432/pf_security_test`) y `PF_PSQL` (`psql`) antes de ejecutar `unittest`; el flujo de CI hace exactamente eso con un servicio de contenedor.
+- Cobertura: `python -m coverage run -m unittest discover -s tests` y `python -m coverage report` (mínimo del 70 %).
+- Contratos: `buf lint` y regeneración con la versión de buf fijada en CI (1.75.0); `app/rpc/gen/` debe coincidir con la salida. Ver [API](docs/api.md#código-generado).
+- Carga local: [carga sostenida](docs/carga-local.md).
 
-## Configuración
+## CI y despliegue
 
-`.env.example` contiene nombres sin valores. Nunca versionar `.env` ni la clave `service_role`. No configurar ni desplegar recursos remotos sin autorización.
+- CI (`.github/workflows/ci.yml`): instala dependencias con hashes, comprueba que los archivos compilados coinciden con sus `.in`, audita las dependencias, ejecuta ruff, buf, las migraciones sobre PostgreSQL 18 y la batería con cobertura. `deployment-check.yml` comprueba el despliegue cada seis horas.
+- Despliegue en Vercel con el preset FastAPI, la raíz del repositorio como raíz del proyecto y `app/main.py:app` como aplicación; `.python-version` fija Python 3.14. Vercel instala `requirements.txt`; por eso el repositorio no tiene `pyproject.toml`, que Vercel tomaría como manifiesto de dependencias. Las variables mínimas son `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `ALLOWED_ORIGINS`. Guía completa en [despliegue](https://github.com/Jacklb19/ProteinForge/blob/main/docs/despliegue.md).
 
-Antes del primer despliegue: verificar runtime Python/Vercel, configurar los orígenes del frontend, probar autorización y RLS con PostgreSQL local. El consentimiento de predicción debe advertir que se enviará la secuencia a un proveedor externo.
+## Documentación
 
-Consultar [arquitectura](docs/arquitectura.md) y [contratos](docs/api.md). Una prueba exitosa de un servicio de predicción público no garantiza su disponibilidad.
+[Arquitectura](docs/arquitectura.md) · [API](docs/api.md) · [Proyectos](docs/project-persistence.md) · [Historial del generador](docs/generator-history.md) · [UniProt](docs/uniprot.md) · [SIFTS](docs/sifts.md) · [Asistente](docs/assistant.md) · [Predicción](docs/folding.md) · [Canal en vivo](docs/live.md) · [Carga local](docs/carga-local.md)
 
-Próximas etapas: verificar el enlace SIFTS y el guardado del historial con sesión real y dos cuentas, por ejemplo con Supabase local, y comprobar la prosa del asistente con lecturas reales. El modelado 3D sigue siendo manual en Colab y sus resultados se importan en el frontend; la inferencia desde la app está aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y no hay ejecutor, pesos ni endpoints de diseño implementados. Cada publicación necesita autorización nueva y conserva el orden migración → backend → repin/regeneración → frontend. Sin migraciones nuevas ni servicios de pago.
+## Repositorio relacionado
+
+El [frontend](https://github.com/Jacklb19/ProteinForge) (React, Workers y WebAssembly) consume los contratos de `proto/` mediante clientes generados que fija a un commit de este repositorio.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE).

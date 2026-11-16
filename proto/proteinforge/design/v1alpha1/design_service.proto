@@ -5,7 +5,7 @@ package proteinforge.design.v1alpha1;
 import "google/protobuf/timestamp.proto";
 
 // PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
-// (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+// (docs/laboratorio-diseno.md in the frontend repository). It will change once the first
 // real run (shape -> sequence -> prediction) measures what the chosen tools produce;
 // v1alpha1 signals that no compatibility is promised yet.
 //

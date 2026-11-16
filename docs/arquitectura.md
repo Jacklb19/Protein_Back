@@ -1,70 +1,68 @@
 # Arquitectura del backend
 
-## Autorización de publicación — 1 nov 2026
+La API de ProteinForge es una aplicación FastAPI que expone los mismos casos de uso por REST y por RPC (Connect, gRPC y gRPC-Web). Gestiona la identidad, la autorización por recurso, los proyectos, la consulta acotada de servicios públicos (UniProt, PDBe/SIFTS, ESM Atlas), la interpretación de resultados con Groq y los informes. No ejecuta algoritmos científicos: el cálculo, la generación de candidatos y la visualización ocurren en el navegador (repositorio [ProteinForge](https://github.com/Jacklb19/ProteinForge)).
 
-El propietario confirma la migración nueva de predicciones y las dos variables de activación, y autoriza push/merge de ambos repositorios con autoría exclusiva suya. Declaración recibida antes de publicar, sin reaplicar SQL ni cambiar configuración por nuestra parte. Se publica primero backend/contrato y se verifica CI antes del frontend. [Estado y alcance](folding.md#activación-autorizada--1-nov-2026). Las secciones fechadas inferiores conservan la historia previa.
+## Vista general
 
-## Implementación local del 30 oct 2026
+```mermaid
+flowchart LR
+  B[Navegador<br/>React y Workers] -- "gRPC-Web (POST /paquete.Servicio/Método)" --> M
+  B -- "WebSocket /v1/live" --> M
+  C[curl, pruebas] -- "REST /v1/* o Connect" --> M
+  subgraph API["API FastAPI (Vercel)"]
+    M[Middleware: cabeceras, correlación, CORS] --> R{Enrutador RPC}
+    R -- "/paquete.Servicio/*" --> S[Servicios generados]
+    R -- "/v1/*" --> F[Rutas REST]
+    S --> D[Funciones de dominio]
+    F --> D
+  end
+  D -- "JWT del usuario y clave pública" --> PG[(Supabase: PostgREST, PostgreSQL con RLS, Storage)]
+  D -- "validar el token" --> AU[Supabase Auth]
+  D --> UP[UniProt]
+  D --> SF[PDBe y SIFTS]
+  D --> GQ[Groq]
+  D --> ES[ESM Atlas]
+```
 
-[Predicción ESM Atlas](folding.md) incorporada con REST/RPC autenticados, consentimiento, validación PDB y límites por identidad/proceso; desactivada por omisión. Documento de laboratorio v2 y workspace v4; migración nueva solo local, sin tablas/Storage nuevos. Batería: 146 descubiertas, 127 ejecutadas correctas y 19 SQL omitidas; las 19 SQL pasan aparte en PostgreSQL 18 temporal, con identidad emulada y clúster detenido. Sin publicación ni aplicación remota. El frontend necesita publicar este contrato y actualizar su pin antes de que CI remoto pueda regenerar el cliente. Se conservan los dos arreglos del asistente de la entrada anterior; las secciones inferiores describen sus fechas.
+## Capas
 
-## Continuación local del 29 oct 2026
+| Capa | Código | Responsabilidad |
+|---|---|---|
+| Transporte | `app/main.py`, `app/rpc/` | Fábrica de la aplicación; middleware de cabeceras de seguridad, correlación (`X-Request-Id`) y CORS; un enrutador ASGI envía `/<paquete>.<Servicio>/*` a los servicios generados y el resto a REST |
+| Contratos | `proto/`, `app/rpc/gen/` | Los `.proto` son la fuente; el código Python se genera con buf y se versiona |
+| Dominio | `app/projects.py`, `reports.py`, `uniprot.py`, `sifts.py`, `residue_mapping.py`, `assistant.py`, `folding.py`, `shares.py`, `live.py` | Validación (Pydantic), reglas y llamadas a los proveedores; una única implementación para REST y RPC |
+| Identidad | `app/identity.py` | Valida el token consultando a Supabase Auth y exige `aal2` a las cuentas con un segundo factor verificado |
+| Configuración | `app/config.py` y los `*_config.py` por dominio | Variables de entorno, límites y constantes con nombre; ningún valor fijo en el dominio |
+| Datos | `supabase/migrations/` | Esquema, funciones `pf_*`, políticas RLS y grants, aplicados en orden de nombre |
 
-Corregidos dos fallos del verificador del asistente: pérdida del signo de cifras y error de cuantización con hechos numéricos largos. Tres regresiones, sin cambios de contratos, dependencias o SQL. [Informe y evidencia](review-continuation-2026-10-29.md). Batería final local con Python 3.13.14: **133 descubiertas, 116 ejecutadas correctas y 17 SQL omitidas**; las 17 SQL pasaron aparte en PostgreSQL 18 temporal, con `auth.uid()` emulado y clúster detenido. Sin publicar ni certificar JWT/PostgREST reales o Python 3.14 de CI. La cifra histórica de 130 incluía las 17 omitidas; no eran 130 ejecutadas más 17.
+## Datos y autorización
 
-## Estado del 28 de octubre de 2026
+- La API **nunca usa la clave `service_role`**. Cada petición a PostgREST y a Storage lleva la clave pública en `apikey` y el token del usuario en `Authorization`, de modo que las políticas RLS deciden qué filas se ven o se escriben.
+- Las tablas de usuario (`profiles`, `projects`, `analyses`, `alignments`, `reports`, `project_versions`, `project_shares`) tienen RLS; `external_cache` y `spend_windows` no tienen políticas y solo las funciones `SECURITY DEFINER` acceden a ellas. Todas las funciones `SECURITY DEFINER` fijan `search_path` vacío, y los permisos de `anon` y `public` se revocan de forma explícita.
+- Las funciones de proyectos (`pf_save_project`, `pf_delete_project`, `pf_list_projects`…) son `SECURITY INVOKER`: escriben con los permisos de quien llama.
+- La concurrencia es optimista: PUT y DELETE llevan la marca de tiempo completa (con microsegundos), la comprobación se hace bajo bloqueo y un conflicto responde 409. Una guardia monótona impide que un cliente antiguo sobrescriba una instantánea de versión superior ([proyectos](project-persistence.md)).
+- Una variante opt-in de MFA en RLS exige `aal2` solo a las cuentas con un factor verificado ([API](api.md#mfa-en-rls)).
+- El presupuesto de consultas a los proveedores es por cuenta; puede contarse en PostgreSQL (`SHARED_BUDGET_ENABLED`) para compartirlo entre instancias.
 
-Publicado `main` `18d9444` con CI y Vercel correctos; `dev` está en `acfea11`. La entrega publicada el 27 de octubre incluye el historial del generador: workspace v3 con el historial dentro del snapshot existente, guardia monótona y el código `project-requires-current-client`. No añade tablas, columnas, políticas ni Storage. [Contrato y decisiones](generator-history-contract-proposal.md).
+## Proveedores externos
 
-El backend publicado funciona con o sin la migración `20261027000000_generator_history.sql`: sin ella, el recuento de búsquedas vale cero y el SQL anterior rechaza los snapshots v3, de modo que la interfaz permanece oculta. El propietario declara haber aplicado esa migración en Supabase remoto el 28 de octubre; queda registrado como su declaración, sin inspección remota por nuestra parte, y no debe repetirse. Para que la aplicación ofrezca el guardado falta además activar `VITE_GENERATOR_HISTORY=enabled` en el proyecto de Vercel del frontend, que es trabajo del propietario.
+| Proveedor | Para qué | Cómo se acota |
+|---|---|---|
+| UniProt | Búsqueda y ficha de referencias | Destino fijo `rest.uniprot.org`, tiempo máximo de 12 s, respuesta de hasta 8 MB, presupuesto por cuenta ([UniProt](uniprot.md)) |
+| PDBe y SIFTS | Correspondencia residuo a residuo UniProt-PDB | URL fijas, sin redirecciones, descarga en bloques acotados y caché pública en memoria ([SIFTS](sifts.md)) |
+| Groq | Lectura en prosa de resultados ya calculados | Clave solo en el servidor; no recibe la secuencia; verificación de cifras ([asistente](assistant.md)) |
+| ESM Atlas | Predicción de estructura (opcional) | Consentimiento por solicitud, límites por cuenta y por proceso, validación del PDB ([predicción](folding.md)) |
+| Supabase Storage | Informes | La API firma las URL; el navegador sube y descarga directamente |
 
-Verificación de aquella entrega: `python -m unittest discover -s tests` con 130 pruebas descubiertas, 113 ejecutadas correctas y 17 SQL omitidas sin base configurada. La ejecución de CI usaba Python 3.14; la comprobación local posterior permite corregir el recuento, sin repetir CI. Pendientes reales: recorrido con JWT real y PostgREST, aislamiento por ID con una segunda cuenta y comprobación de la prosa del asistente. Por decisión del propietario del 28 de octubre, la inferencia estructural desde la aplicación queda aplazada hasta que exista un ejecutor gratuito cuyos términos la permitan, y el diseño de forma nueva queda fuera del alcance; el cuaderno manual de Colab es la vía oficial y el frontend importa sus resultados. Las secciones siguientes conservan el histórico anterior.
+Los secretos viven solo en variables del servidor. No se registran secuencias privadas ni secretos en los logs, y los errores nunca incluyen datos enviados por la persona.
 
-## Continuación del 26 de octubre de 2026
+## Despliegue
 
-La publicación de proyectos/laboratorio/asistente se completó el 23 de octubre; las entradas fechadas inferiores conservan sus estados anteriores. La lectura autenticada de Groq en producción aún no se ha comprobado. El propietario aprobó la maqueta y el suministro SIFTS: implementados localmente adquisición/normalización, comprobación de referencia completa, caché pública acotada por proceso y rutas autenticadas REST/RPC. [Contrato y evidencia](sifts.md). La interfaz Biblioteca/Analizar está integrada y verificada localmente, con identidad simulada. Sin inferencia estructural desde la aplicación, migraciones nuevas o publicación de esta continuación. Backend nuevo debe publicarse primero; repinchar/regenerar frontend después.
+- Un proyecto de Vercel con el preset FastAPI y la raíz del repositorio como raíz del proyecto: detecta `app/main.py:app`, instala `requirements.txt` y usa la versión de Python de `.python-version` (3.14).
+- Las dependencias directas están en `requirements.in` y se compilan con hashes (`uv pip compile`) en `requirements.txt`; CI comprueba que coinciden y ejecuta `pip-audit`. El repositorio no tiene `pyproject.toml` a propósito, porque Vercel lo tomaría como manifiesto de dependencias en lugar de `requirements.txt`.
+- La API no instala modelos ni pesos: la predicción usa un servicio público externo y el modelado del laboratorio ocurre en un cuaderno de Colab.
+- Orden de publicación cuando cambia un contrato: migración en Supabase → backend → actualizar el pin de `buf.gen.yaml` del frontend y regenerar → frontend. Las variables y las URL están en la [guía de despliegue](https://github.com/Jacklb19/ProteinForge/blob/main/docs/despliegue.md).
 
-Actualización del 23 oct 2026: el laboratorio ya está publicado y el recorrido real del 22 oct está registrado en [activación](../../frontend/docs/laboratory-activation.md); aislamiento por ID con la segunda cuenta sigue pendiente. El asistente de interpretación está implementado localmente por REST/Connect/gRPC-Web, con Groq, cuota por identidad y comprobación de cifras; [contrato, límites y publicación](assistant.md). La interfaz aprobada solo envía cifras. Inferencia estructural desde la aplicación y `DesignService` continúan sin implementar. Los apartados fechados inferiores conservan la preparación anterior y no autorizan futuras operaciones remotas.
+## Pruebas y CI
 
-Las API de prueba alojadas de NVIDIA se limitan a evaluación interna; una web académica abierta a usuarios reales no queda autorizada por no cobrar. Revisión completa de términos, recomendación de ensayo solo para el propietario y advertencia de endpoint ESMFold obsoleto en [inferencia desde la app](../../frontend/docs/app-inference-proposal.md). No hay integración NVIDIA implementada ni contratos aceptados.
-
-## Persistencia del laboratorio — 21 oct 2026
-
-Contrato aprobado e implementado localmente dentro del snapshot existente en analyses. Workspace v2 conserva un sobre del archivo portable con SHA-256, limitado a 1.000.000 bytes; el backend valida forma, fuente y borradores, sin descomprimir ZIP ni recalcular ciencia. El navegador revalida en Worker. Preview solo añade presencia/cantidad. RLS, SECURITY INVOKER y concurrencia existentes conservados; cliente antiguo v1 no puede sustituir v2. Ver [contrato y activación pendiente](project-persistence.md). El propietario confirmó aplicar la migración el 21 oct, sin inspección remota de nuestra parte; no repetirla. Código nuevo todavía local, publicación pendiente de autorización específica.
-
-## Estado
-
-API: health/me, CRUD proyectos, persistencia del laboratorio, UniProt, interpretación, SIFTS autenticado e historial del generador ya publicados. JWT de usuario/SECURITY INVOKER sobre projects/analyses. Migraciones del laboratorio y del historial aplicadas por el propietario; no repetirlas. Falta el recorrido con JWT real de SIFTS y del historial. RLS/concurrencia PostgreSQL 18 comprobados en la entrega previa, sin nueva ejecución SQL en esta continuación. [Contratos](api.md), [persistencia](project-persistence.md), [UniProt](uniprot.md), [carga HTTP local con proveedores simulados](local-api-load.md).
-
-## Responsabilidades
-
-- FastAPI (0.142.4, uvicorn 0.54.0, httpx 0.28.1 y python-dotenv 1.2.4 fijados en `requirements.txt`): validar entradas, identidad y propiedad de recursos; responder JSON/OpenAPI según contratos implementados. Configuración del `.env` propio con prioridad de variables del proceso, sin alterar `os.environ`. Python 3.14 es el objetivo de despliegue; la base se ha ejecutado localmente con 3.13.
-- Supabase Auth/PostgreSQL/Storage: identidad, proyectos y archivos. Esquema en `supabase/migrations/`.
-- Proveedores externos: UniProt para referencias y Groq para interpretación de resultados, publicados; PDBe/SIFTS autenticado implementado localmente. Presupuestos por identidad y por proceso, con caché pública SIFTS acotada. Inferencia estructural desde la aplicación pendiente; los resultados manuales de Colab se importan en el frontend. No se ejecutan modelos en la API.
-- Cliente React independiente: cálculo científico/generación guiada/visualización/informes locales. Backend no implementa algoritmos del navegador.
-
-## Datos existentes
-
-Se conservan profiles/projects/analyses/alignments/external_cache. Migración posterior reemplaza helper UUIDv7 provisional con timestamp/bits/gen_random_uuid SQL, sin exigir Python 3.14 local; profiles.id coincide con Auth. Snapshot workspace-v1 en analyses incluye fuente opcional exacta y resultados asociados. Cambios en migraciones nuevas; no modifican por sí solos la base remota.
-
-Guardar candidatos, parámetros de búsqueda, consentimiento y predicciones necesita diseño adicional. No hay tablas, campos o endpoints nuevos aprobados para esas capacidades todavía.
-
-## Seguridad e integración
-
-Secretos solo en variables del servidor. JWT y autorización por recurso; CORS a orígenes configurados. RLS de tablas de usuario y acceso exclusivo del servidor a caché externa. TOTP opcional con aal2 cuando se active, aún pendiente.
-
-La predicción envía secuencia completa tras consentimiento. El asistente recibe solo descriptores/anotación/parámetros. Retención, cuotas y términos se verifican al integrar cada proveedor. No registrar secuencias privadas o secretos en logs.
-
-Concurrencia optimista PUT/DELETE: timestamp con microsegundos, bloqueo y conflicto 409. PDF local implementado en frontend; subida por URL firmada/registro todavía previstos, sin endpoints activos. Consultar límites al integrar archivos/proveedores.
-
-## Despliegue y operación
-
-Vercel independiente, Supabase Free y costo cero sin tarjeta. Próximo alcance: dos o tres diseños computacionales para demo, sin GPU permanente ni entrenamiento propio. Probar Colab interactivo o equipo local separado de FastAPI; automatización posterior con ejecutor/cola si se acuerda, sin nuevos endpoints/migraciones todavía. No alojar pesos en la función Vercel; identificar resultados de respaldo como tales.
-
-Acuerdo de producto/modelos/hardware/alojamiento y precios en el [laboratorio del frontend](https://github.com/Jacklb19/ProteinForge/blob/dev/docs/design-lab-roadmap.md). Railway coordina tareas pero no ofrece GPU; Render publica CPU/RAM sin GPU cotizada para este caso. Precios consultados no autorizan gasto ni acreditan rendimiento.
-
-La petición posterior autoriza push de dev de ambos repositorios solo con autoría exclusiva del propietario, sin coautores. main conserva versión estable; sin merge, contratación ni migraciones autorizadas. Activar persistencia y verificar sesión real sigue pendiente.
-
-## Pruebas
-
-unittest en la entrega anterior: 130 descubiertas, 113 ejecutadas correctas y 17 SQL omitidas sin base configurada, con transporte simulado; comprobado el 28 oct en local y ejecutado también por CI con Python 3.14. La continuación local del 29 oct suma tres regresiones: 133 descubiertas, 116 ejecutadas + 17 omitidas, y 17 SQL correctas aparte en PostgreSQL 18 temporal. Cubre auditoría estática, REST, RPC, proyectos, SIFTS, asistente e historial del generador. `scripts/test-postgres.ps1` ejecuta migraciones, RLS y concurrencia en un PostgreSQL temporal real con Auth.uid emulado: propietario, anónimo, transferencia, cascada, rollback y concurrencia. No certifica JWT ni PostgREST remotos. Adaptador UniProt probado además con datos públicos reales, sin credenciales.
+`python -m unittest discover -s tests` cubre la auditoría estática, REST, RPC por los tres protocolos, proyectos, adaptadores con transporte simulado y los servicios SIFTS, asistente, informes, canal en vivo y predicción. Las pruebas SQL ejecutan las migraciones, RLS y la concurrencia contra un PostgreSQL real con `auth.uid()` emulado (`tests/postgres_bootstrap.sql`): `scripts/test-postgres.ps1` en local y un servicio PostgreSQL 18 en CI. No sustituyen la comprobación contra PostgREST y Supabase reales. CI ejecuta además ruff, `buf lint`, la comprobación de que el código generado está al día y un umbral de cobertura. Un flujo programado (`deployment-check.yml`) comprueba el despliegue.
