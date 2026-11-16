@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 class DesignService(Protocol):
     """
     PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
-    (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+    (docs/laboratorio-diseno.md in the frontend repository). It will change once the first
     real run (shape -> sequence -> prediction) measures what the chosen tools produce;
     v1alpha1 signals that no compatibility is promised yet.
 
@@ -145,7 +145,7 @@ class DesignServiceASGIApplication(ConnectASGIApplication[DesignService]):
 class DesignServiceClient(ConnectClient):
     """
     PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
-    (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+    (docs/laboratorio-diseno.md in the frontend repository). It will change once the first
     real run (shape -> sequence -> prediction) measures what the chosen tools produce;
     v1alpha1 signals that no compatibility is promised yet.
 
@@ -256,7 +256,7 @@ class DesignServiceClient(ConnectClient):
 class DesignServiceSync(Protocol):
     """
     PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
-    (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+    (docs/laboratorio-diseno.md in the frontend repository). It will change once the first
     real run (shape -> sequence -> prediction) measures what the chosen tools produce;
     v1alpha1 signals that no compatibility is promised yet.
 
@@ -369,7 +369,7 @@ class DesignServiceWSGIApplication(ConnectWSGIApplication):
 class DesignServiceClientSync(ConnectClientSync):
     """
     PLANNED, NOT IMPLEMENTED. Draft contract for the didactic design laboratory
-    (docs/design-lab-roadmap.md in the frontend repository). It will change once the first
+    (docs/laboratorio-diseno.md in the frontend repository). It will change once the first
     real run (shape -> sequence -> prediction) measures what the chosen tools produce;
     v1alpha1 signals that no compatibility is promised yet.
 
