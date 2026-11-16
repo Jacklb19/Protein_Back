@@ -1,6 +1,6 @@
 # Canal en vivo (WebSocket)
 
-Implementado en local el 9–10 nov 2026, **sin commit, push ni publicación**. Desactivado por omisión en los dos repositorios.
+Desactivado por omisión en los dos repositorios.
 
 ## Qué hace
 
@@ -39,16 +39,15 @@ En Vercel, dos conexiones pueden caer en instancias distintas y no comparten mem
 
 Una función de Vercel Hobby dura 300 s como máximo; el servidor cierra antes, a los `LIVE_MAX_CONNECTION_SECONDS` (240 s), con 4000, y el cliente reconecta en el acto.
 
-## Activación (pendiente del propietario)
+## Activación
 
 1. Backend: publicar, y en Vercel definir `LIVE_ENABLED=enabled`. Requiere Fluid compute (por omisión en proyectos creados desde el 23 abr 2025). `wsproto` está fijado en `requirements.txt`.
 2. Frontend: `VITE_PROJECT_LIVE=enabled` y redesplegar. La CSP de `vercel.json` ya incluye `wss://protein-back.vercel.app`.
 3. Sin migraciones.
 
-**Sin comprobar:** el canal en Vercel real. La documentación de Vercel muestra FastAPI con `uvicorn[standard]` en `pyproject.toml`; que baste `wsproto` en `requirements.txt` no está confirmado y hay que verlo al desplegar. Tampoco se midió el consumo del plan Hobby con conexiones abiertas: cada pestaña visible mantiene una función viva y hace una lectura a Supabase cada 5 s. Una pestaña oculta más de 60 s suelta la conexión.
+**Límites conocidos:** la documentación de Vercel muestra FastAPI con `uvicorn[standard]` en `pyproject.toml`; el repositorio usa `wsproto` fijado en `requirements.txt`, así que el canal debe comprobarse tras desplegar. Cada pestaña visible mantiene una función viva y hace una lectura a Supabase cada 5 s, lo que consume plan; una pestaña oculta más de 60 s suelta la conexión.
 
-## Verificación local
+## Verificación
 
-- `tests/test_live.py`, 14 pruebas: saludo rechazado (desactivado, otro origen, sin origen, sin subprotocolo, sin identidad), primer mensaje, silencio, avisos con el token de quien llama, ventana parcial, despertar tras una escritura REST, ping y token renovado, otra cuenta, mensajes fuera del protocolo, límites, rotación, token caducado y Supabase caído. Batería completa: 214 ejecutadas, 27 SQL omitidas sin base; ruff limpio; `app/live.py` 95 %.
-- uvicorn real en loopback con un cliente WebSocket de Node: origen ajeno rechazado, `ready`, `pong`, `projects.changed` y cierre 4000.
-- Navegador real contra esa API con identidad simulada: la lista de Proyectos mostró un proyecto nuevo sin recargar.
+- `tests/test_live.py`: saludo rechazado (desactivado, otro origen, sin origen, sin subprotocolo, sin identidad), primer mensaje, silencio, avisos con el token de quien llama, ventana parcial, despertar tras una escritura REST, ping y token renovado, otra cuenta, mensajes fuera del protocolo, límites, rotación, token caducado y Supabase caído.
+- Comprobación manual con uvicorn en loopback y un cliente WebSocket: origen ajeno rechazado, `ready`, `pong`, `projects.changed` y cierre 4000. En un navegador contra esa API con identidad simulada, la lista de Proyectos mostró un proyecto nuevo sin recargar.

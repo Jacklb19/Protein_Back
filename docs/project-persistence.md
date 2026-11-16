@@ -1,80 +1,69 @@
-# Proyectos: contrato, pruebas y activación
+# Proyectos: contrato, persistencia y pruebas
 
-## Restricciones de tabla tras los grants — 2 nov 2026
-
-Hallazgo de la auditoría de calidad del 2 nov: `authenticated` conserva `insert`/`update` sobre `projects` y `analyses` (20261012000000), así que una escritura directa por PostgREST evitaba la validación de la API. No se retiran esos grants: `pf_save_project` y las demás `pf_*` son SECURITY INVOKER y escriben con ellos; el frontend no escribe tablas directamente. Migración local [20261102000001_table_write_constraints.sql](../supabase/migrations/20261102000001_table_write_constraints.sql), **pendiente de que el propietario la aplique en remoto**:
-
-- `projects`: nombre de 1 a 120 caracteres, no vacío tras `btrim` y sin caracteres de control; `active_sequence` de hasta 100.000 residuos del alfabeto de la API; `status` solo `draft`.
-- `analyses`: solo `type = 'workspace-v1'`; `results` objeto con `schemaVersion` numérico 1–4 y hasta 1.900.000 bytes (el límite de `pf_save_project`); `parameters` igual a `{"schemaVersion": …}` del snapshot.
-- `alignments`: ningún código la usa; se revocan `insert`/`update` a `authenticated` (conserva `select`/`delete`).
-
-Las restricciones son `NOT VALID`: no revisan filas existentes, por lo que aplicarla no falla por datos remotos, pero toda escritura nueva (también la actualización de una fila antigua) las cumple. Tras comprobar los datos se puede ejecutar `alter table … validate constraint …`. Es idempotente: solo añade la restricción que falte por nombre. La validación profunda del snapshot (laboratorio, historial, predicción) sigue en la API y en `pf_save_project`; la tabla solo acota forma y tamaño. `profiles` queda igual: la API no la escribe y no hay límites de contrato que reflejar. Valores comprobados contra el código en `tests/test_migrations.py`; comportamiento en PostgreSQL 18 temporal en `tests/test_postgres.py`.
-
-## Idempotencia de CreateProject (RF-15) — 2 nov 2026
-
-Aprobado por el propietario («A en las tres», 2 nov) para el guardado automático al volver la red: sin clave, un reintento tras perder la respuesta crearía un duplicado. Migración nueva [20261102000000_project_create_idempotency.sql](../supabase/migrations/20261102000000_project_create_idempotency.sql): columna `projects.create_request_id uuid null`, índice único parcial `(owner_id, create_request_id) where create_request_id is not null` y `pf_save_project(..., p_create_request_id uuid default null)`. Con una pareja repetida, `insert … on conflict do nothing` no inserta y la función devuelve el documento actual del proyecto existente, sin reescribir nombre ni snapshot; dos creaciones simultáneas con la misma clave devuelven el mismo proyecto. Una actualización con clave es `PT422`. Se elimina la firma de cinco argumentos para no dejar una sobrecarga ambigua en PostgREST; las llamadas con cinco argumentos siguen funcionando por el valor por omisión. RLS, SECURITY INVOKER, validaciones, guardia monótona y concurrencia optimista sin cambios. REST: `requestId` opcional solo en `POST /v1/projects` (en `PUT` se rechaza como campo extra); gRPC: `CreateProjectRequest.request_id` (campo 4). Borrar el proyecto libera la clave.
-
-Verificación local: 25 pruebas SQL en PostgreSQL 18 temporal (127.0.0.1, `scripts/test-postgres.ps1 -Port 55447`), dos nuevas: reintento con el mismo proyecto y snapshot intactos, otra cuenta con la misma clave crea otro, dos sin clave crean dos, carrera de dos creaciones con la misma clave, borrado que libera la clave, actualización con clave rechazada, anónimo rechazado; y conflicto de `UpdateProject` sin cambios tras reaplicar la migración dos veces, con una única función `pf_save_project`. Batería sin base: 187 ejecutadas, 25 SQL omitidas. Aplicada en Supabase por el propietario el 2 nov 2026 (declarado, sin inspección remota); backend publicado en `dev` (b085b23) y frontend repinchado (87edcfc). No volver a ejecutarla.
-
-## Historial del generador implementado localmente — 27 oct 2026
-
-Decisiones tomadas por delegación el 27 oct 2026 ([propuesta](generator-history-contract-proposal.md)). Sin tablas, columnas ni políticas nuevas: el historial vive en el mismo snapshot `analyses.type=workspace-v1`, con `results.schemaVersion` 3. `pf_save_project` acepta '1', '2' y '3' (número JSON), conserva el límite de 1.900.000 bytes y valida laboratorio (opcional en v3) e historial (`pf_validate_generator_history`, `PT422` «Invalid generator history»). La guardia contra sobrescritura pasa a ser **monótona**: bajo el mismo bloqueo, antes de modificar nombre o timestamp, rechaza cualquier versión inferior a la guardada (`PT409` «Project requires current client»); antes solo protegía v2. La API distingue ese mensaje fijo y responde `409 project-requires-current-client`/`ABORTED`; la concurrencia sigue siendo `project-conflict`. Un proyecto v3 no vuelve a v2 aunque se retiren todas sus ejecuciones. `pf_project_preview` añade `generatorRuns` (0–10) y reconoce laboratorio en v2 y v3, sin devolver documentos.
-
-Migración nueva idempotente: [20261027000000_generator_history.sql](../supabase/migrations/20261027000000_generator_history.sql). Solo se ejecutó en PostgreSQL 18 temporal en 127.0.0.1: 17 pruebas reales, cinco nuevas (ida y vuelta con laboratorio, RLS/dos propietarios/anon, copia y cascada; guardia v1/v2→v3 sin escritura parcial y v3 sin historial; dos escritores con un ganador; validación SQL equivalente con diez casos inválidos y diez ejecuciones válidas; repetición de la migración y funciones privadas). Las pruebas que reaplican migraciones antiguas vuelven a aplicar las posteriores para no dejar funciones anteriores activas. API: 130 pruebas, 17 SQL omitidas en la batería sin base. **No aplicada en Supabase**; aplicarla, publicar backend y después frontend requieren autorización expresa del propietario. Orden previsto: migración → backend → pin/regeneración → frontend.
-
-## Laboratorio aprobado e implementado localmente — 21 oct 2026
-
-Se conserva analyses.type=workspace-v1 como clave estable de almacenamiento; results y parameters registran schemaVersion 2 si llevan laboratorio. No hay tablas nuevas, Storage ni modelos en FastAPI. Sobre JSON/SHA-256 de hasta 1.000.000 bytes; fuente Base64 se comprueba sin descomprimir, estado tiene 1–3 borradores de 3–120 residuos, posiciones únicas y selección activa válida. Los datos científicos completos se revalidan en Worker al guardar y abrir. El editor de análisis y el laboratorio tienen vínculos independientes: cambiar de herramienta no reemplaza el otro borrador; conservar laboratory en actualizaciones de análisis evita pérdida. El campo activeSequence de análisis no se fuerza a coincidir con el borrador activo del laboratorio. La guardia de versión se comprueba bajo bloqueo antes de escribir; una actualización v1 de un proyecto v2 falla sin modificar nombre/timestamp/snapshot.
-
-Migración nueva idempotente: [20261021000000_laboratory_projects.sql](../supabase/migrations/20261021000000_laboratory_projects.sql). Solo se ejecutó en PostgreSQL temporal localhost, con 12 pruebas reales: RLS/dos propietarios/anon, copia/rename/delete, tamaños/hash, rollback y carrera de versiones, más repetición de migración. API: 43 pruebas ejecutadas, 12 SQL omitidas en la batería sin base (se ejecutan aparte). No certifica Auth/PostgREST remoto.
-
-Confirmación posterior del propietario, 21 oct: ya aplicó la migración nueva. Es evidencia declarada, sin inspección remota; no volver a ejecutarla. Pendiente, previa autorización específica: publicar backend antes de frontend para que la referencia protobuf esté disponible; comprobar cuenta real, dos propietarios y dos pestañas. No repetir migraciones iniciales. Esta entrega no autoriza ni realiza esos pasos remotos.
-
-19 oct 2026: CRUD/gRPC-Web publicados y migraciones originales aplicadas por el propietario. La prueba del propietario confirma CRUD y correo de confirmación. La nueva sección Proyectos requiere una migración adicional, preparada y probada únicamente en PostgreSQL local.
+Un proyecto es un nombre, una secuencia activa y una instantánea (`workspace`) con los resultados que el cliente quiere conservar. Este documento describe el contrato, el almacenamiento, las restricciones de tabla y cómo reproducir las pruebas. Las rutas y los códigos de error están en [API](api.md).
 
 ## Contrato
 
-POST /v1/projects recibe name (1–120 caracteres sin controles), activeSequence (0–100.000 residuos normalizados) y workspace. PUT /v1/projects/{id} añade expectedUpdatedAt con fecha ISO 8601/zona/microsegundos originales. DELETE exige ese valor en query y responde 204. Propietario exclusivamente desde el JWT; campos extra rechazados.
+- `POST /v1/projects` recibe `name` (1 a 120 caracteres sin controles), `activeSequence` (0 a 100.000 residuos normalizados) y `workspace`. `PUT /v1/projects/{id}` añade `expectedUpdatedAt`, con la fecha ISO 8601, zona y microsegundos originales. `DELETE` exige ese valor en la consulta y responde 204. El propietario sale exclusivamente del JWT y los campos extra se rechazan.
+- `workspace` (versión 1) contiene `schemaVersion`, `profileWindow` (9 o 19), `descriptors` (`null` o `{sequence, excluded, methodVersion: "proteinforge-descriptors-v1", result: {massDa, isoelectricPoint, instabilityIndex, aliphaticIndex, gravy, length}}`) y `alignment` (`{first, second, matrix, mode, result}`). La comparación admite hasta 5.000 residuos por entrada, matrices BLOSUM45/62/80, modo global o local, apertura 10, extensión 0,5 y extremos globales gratuitos; el resultado lleva `alignedFirst`, `alignedSecond`, `marks`, `score`, `identities`, `similarities`, `columns` y `parameters`. Los resultados pendientes o desactualizados se omiten. El servidor valida la asociación, las dimensiones y los parámetros, pero no recalcula ni certifica los valores científicos del cliente.
+- Las versiones posteriores añaden `laboratory` (v2), `generatorHistory` (v3, ver [historial del generador](generator-history.md)) y las predicciones del laboratorio (v4, ver [predicción](folding.md)). La guardia monótona de SQL rechaza guardar una versión inferior a la almacenada.
+- Crear, abrir y actualizar devuelven `{id, name, status, activeSequence, createdAt, updatedAt, workspace}`; el resumen de RPC añade un `preview` opcional.
+- El listado (`limit` 1 a 100, 30 por omisión; `offset` 0 a 100.000; `query` y `order`) devuelve `{items: [{id, name, status, createdAt, updatedAt, preview}], nextOffset}` y no entrega instantáneas completas. La consulta SQL incluye solo prefijos de hasta 40 residuos, resultados vigentes, procedencia sin secuencia y un resumen de la comparación; los valores no calculados se conservan ausentes. El orden es por actualización e id descendentes, o por nombre en minúsculas e id ascendentes. La consulta de nombre es una subcadena literal, sin comodines. El desplazamiento puede variar con escrituras concurrentes, así que el cliente deduplica al ampliar y reinicia al actualizar o escribir.
+- `409` conserva la versión y el borrador y deja al cliente la elección de copiar o recuperar. `404` para un proyecto ajeno o ausente. `503 projects-schema-unavailable` si faltan tablas o funciones: la API no descarga todos los proyectos como alternativa. `Cache-Control: no-store`.
 
-workspace contiene schemaVersion=1, profileWindow=9/19, descriptors=null o {sequence,excluded,methodVersion:"proteinforge-descriptors-v1",result:{massDa,isoelectricPoint,instabilityIndex,aliphaticIndex,gravy,length}}, alignment={first,second,matrix,mode,result}. Comparación hasta 5.000 residuos por entrada; matrices BLOSUM45/62/80, global/local, apertura 10/extensión 0,5 y extremos globales gratuitos. Resultado con alignedFirst/alignedSecond/marks/score/identities/similarities/columns/parameters. Resultados pendientes/desactualizados se omiten; servidor valida asociación/dimensiones/parámetros, sin certificar ni recalcular valores científicos del cliente.
+## Almacenamiento
 
-Creación/apertura/actualización devuelven {id,name,status,activeSequence,createdAt,updatedAt,workspace}, más preview opcional en el resumen RPC. GET /v1/projects recibe limit 1–100 (30 por defecto), offset 0–100.000, query y order; devuelve {items:[{id,name,status,createdAt,updatedAt,preview}],nextOffset}. No entrega snapshots completos en lista. La consulta SQL incluye solo prefijos de hasta 40 residuos, resultados vigentes, procedencia sin secuencia y resumen de comparación; los valores no calculados se conservan ausentes. Orden por actualización/id descendentes o por nombre en minúsculas/id ascendentes. La consulta de nombre es substring literal, sin comodines. Offset puede variar con escrituras concurrentes; cliente deduplica al ampliar y reinicia al actualizar/escribir.
+- `projects` guarda el nombre y la secuencia; `analyses` guarda una instantánea `type = 'workspace-v1'` (clave estable) con un índice único parcial. No hay tablas nuevas por versión de contrato: laboratorio, historial y predicciones viven dentro de la misma instantánea (`results.schemaVersion` 1 a 4).
+- `pf_save_project` bloquea el proyecto, valida la versión y actualiza proyecto e instantánea en una transacción; `pf_delete_project` aplica la comparación de versión y el borrado en cascada; `pf_project_document` devuelve el JSON. Todas son `SECURITY INVOKER`, con `search_path` vacío y permisos solo para `authenticated`. La API reenvía el JWT y la clave pública, nunca `service_role`.
+- `pf_save_project` acepta las versiones 1 a 4, conserva el límite de 1.900.000 bytes y valida el laboratorio (`PT422` ante un documento inválido, `PT409` ante una versión inferior). Una actualización v1 sobre un proyecto v2 falla sin modificar nombre, marca de tiempo ni instantánea.
+- **Creación idempotente (RF-15).** La migración `20261102000000_project_create_idempotency.sql` añade `projects.create_request_id uuid null`, un índice único parcial `(owner_id, create_request_id) where create_request_id is not null` y `pf_save_project(..., p_create_request_id uuid default null)`. Con una pareja repetida, `insert … on conflict do nothing` no inserta y la función devuelve el documento actual del proyecto existente sin reescribir nombre ni instantánea; dos creaciones simultáneas con la misma clave devuelven el mismo proyecto. Una actualización con clave es `PT422`. Se elimina la firma de cinco argumentos para no dejar una sobrecarga ambigua en PostgREST, y las llamadas con cinco argumentos siguen funcionando por el valor por omisión. En REST, `requestId` solo se admite en `POST`; en gRPC es `CreateProjectRequest.request_id` (campo 4). Borrar el proyecto libera la clave.
+- **Vistas previas.** `20261019000001_project_previews.sql` (idempotente) crea `pf_list_projects` y `pf_project_preview`, fija permisos y notifica la recarga de PostgREST; no cambia filas ni políticas.
 
-projects almacena nombre/secuencia; analyses guarda un snapshot type=workspace-v1, índice único parcial, sin nuevas tablas. RPC pf_save_project bloquea/valida versión y actualiza proyecto/snapshot en una transacción. pf_delete_project aplica comparación y cascada; pf_project_document devuelve JSON. Todas SECURITY INVOKER, search_path vacío y grants authenticated; API reenvía JWT y clave pública, nunca service_role. UUIDv7 provisional en PostgreSQL compatible con Python 3.13 local.
+### Restricciones de tabla
 
-409 conserva versión/borrador; opciones de copia o recuperación explícita. 404 para ajeno/ausente. 503 projects-schema-unavailable para tablas/RPC pendientes. Cache-Control:no-store. Sin guardado automático ni sincronización offline; localStorage guarda solo último ID por usuario. Timeout puede dejar confirmación incierta: actualizar lista antes de repetir creación. Eliminar conserva borrador en memoria.
+`authenticated` conserva `insert` y `update` sobre `projects` y `analyses` (migración `20261012000000`), porque las funciones `pf_*` son `SECURITY INVOKER` y escriben con esos permisos; el frontend no escribe tablas directamente. Para que una escritura directa por PostgREST no evite la validación de la API, la migración [20261102000001_table_write_constraints.sql](../supabase/migrations/20261102000001_table_write_constraints.sql) añade:
 
-Referencias: [RLS Supabase](https://supabase.com/docs/guides/database/postgres/row-level-security), [RPC PostgREST](https://docs.postgrest.org/en/stable/references/api/functions.html), [errores PostgREST](https://docs.postgrest.org/en/stable/references/errors.html).
+- `projects`: nombre de 1 a 120 caracteres, no vacío tras `btrim` y sin caracteres de control; `active_sequence` de hasta 100.000 residuos del alfabeto de la API; `status` solo `draft`.
+- `analyses`: solo `type = 'workspace-v1'`; `results` objeto con `schemaVersion` numérico de 1 a 4 y hasta 1.900.000 bytes; `parameters` igual a `{"schemaVersion": …}` de la instantánea.
+- `alignments`: ningún código la usa, por lo que se revocan `insert` y `update` a `authenticated` (conserva `select` y `delete`).
 
-## Reproducir
+Las restricciones son `NOT VALID`: no revisan las filas existentes, de modo que aplicarlas no falla por datos antiguos, pero toda escritura nueva las cumple. Tras comprobar los datos se puede ejecutar `alter table … validate constraint …`. La migración es idempotente. La validación profunda de la instantánea (laboratorio, historial, predicción) sigue en la API y en `pf_save_project`. Los valores se comprueban contra el código en `tests/test_migrations.py` y el comportamiento en `tests/test_postgres.py`.
 
-```powershell
-.venv/Scripts/python.exe -m unittest discover -s tests -v
-./scripts/test-postgres.ps1
+## Migraciones
+
+Se aplican en orden de nombre sobre la base de Supabase (SQL Editor o CLI); cada una es idempotente y no debe repetirse la inicial sobre una base ya migrada. Los scripts de arranque de las pruebas aplican todas las migraciones en orden.
+
+| Migración | Contenido |
+|---|---|
+| `20260928000000_initial_schema` | Esquema inicial, RLS, UUIDv7 provisional |
+| `20261012000000_project_transactions` | Permisos, índice de instantánea, marca de tiempo monótona y funciones `pf_*` |
+| `20261019000000_backfill_profiles` | Perfiles de cuentas existentes |
+| `20261019000001_project_previews` | Vistas previas y búsqueda del listado |
+| `20261021000000_laboratory_projects` | Laboratorio dentro de la instantánea (v2) |
+| `20261027000000_generator_history` | Historial del generador (v3) y guardia monótona |
+| `20261030000000_structure_predictions` | Predicciones del laboratorio (v4) |
+| `20261101000000_report_storage` | Informes: tabla, bucket y cuota |
+| `20261102000000_project_create_idempotency` | Creación idempotente |
+| `20261102000001_table_write_constraints` | Restricciones de tabla |
+| `20261110000000_project_versions` | Versiones de proyecto |
+| `20261111000000_project_shares` | Enlaces de solo lectura |
+| `20261113000000_project_quota` | Cuota de proyectos por cuenta |
+| `20261113000001_shared_budget` | Presupuesto compartido |
+| `20261113000002_mfa_policies` | MFA en RLS |
+| `20261114000000_share_duration` | Duración de los enlaces |
+| `20261114000001_version_changes` | Comparación de versiones |
+
+Orden de despliegue de un cambio de contrato: migración → backend → repin y regeneración del frontend → frontend. Si falta una migración, la API responde `projects-schema-unavailable` en lugar de degradarse.
+
+## Reproducir las pruebas
+
+```bash
+.venv/Scripts/python.exe -m unittest discover -s tests -v   # POSIX: .venv/bin/python
+./scripts/test-postgres.ps1                                  # PostgreSQL temporal (PowerShell)
 ```
 
-Primera batería: contratos HTTP/identidad/validación/JWT/versiones/404/409 con transporte simulado; seis tests SQL se omiten sin base configurada. Segundo comando: cluster propio tmp/pg-UUID, solo 127.0.0.1:55439, bootstrap y ambas migraciones, seis tests reales y apagado en finally. Opciones -PostgresBin/-Port. Cluster/log ignorados conservados para diagnóstico; no lee .env ni usa bases remotas/existentes.
+La primera batería cubre los contratos HTTP, identidad, validación, JWT, versiones, 404 y 409 con transporte simulado; las pruebas SQL se omiten si no hay una base configurada. `test-postgres.ps1` crea un clúster propio en `tmp/`, escucha solo en `127.0.0.1`, aplica el arranque y todas las migraciones, ejecuta las pruebas reales y lo apaga al terminar; admite `-PostgresBin` y `-Port`. No lee `.env` ni usa bases remotas o existentes. Con otro sistema operativo, CI muestra la alternativa: un servicio `postgres:18` y las variables `PF_TEST_DATABASE_URL` y `PF_PSQL`, con `tests/postgres_bootstrap.sql` aplicado primero (solo se aceptan bases en loopback llamadas `pf_security_test`).
 
-Comprobado: PostgreSQL 18.0 y Python 3.13, RLS entre propietarios/falsificación/transferencia/hijos/anon/caché, CRUD/cascada, rollback y dos escritores con un ganador. Bootstrap emula auth.users/roles/auth.uid; políticas/RPC son migraciones reales. No equivale a JWT/PostgREST/Supabase remoto. Python 3.14 y PostgreSQL 15/16 no ejecutados.
+Las pruebas SQL cubren RLS entre propietarios, falsificación y transferencia, hijos, `anon`, caché externa, CRUD y cascada, rollback, dos escritores con un único ganador, la idempotencia de la creación, la validación del historial y las restricciones de tabla. El arranque emula `auth.users`, los roles y `auth.uid()`; las políticas y funciones son las migraciones reales. No equivale a probar JWT, PostgREST ni Supabase remotos.
 
-## Pasos externos del usuario
-
-### Entrega de Proyectos — migración adicional
-
-Las migraciones 20260928, 20261012 y backfill 20261019 ya fueron aplicadas por el propietario. **No volver a ejecutar la inicial.** Para esta entrega, revisar y aplicar únicamente [20261019000001_project_previews.sql](../supabase/migrations/20261019000001_project_previews.sql) desde el SQL Editor de su Supabase. Es idempotente: crea/reemplaza dos funciones, fija grants y notifica recarga de PostgREST; no cambia filas ni políticas RLS de tablas.
-
-Comprobado en PostgreSQL 18 temporal: nueve pruebas, incluidas separación de propietarios/anónimo, consulta antes de paginar, prefijo acotado, substring literal `%_`, omisión de resultados desactualizados, conservación de conteos/ceros, repetición de la migración y concurrencia original. Auth.uid se emula; esto no certifica PostgREST remoto. Si falta la migración, la API nueva responde `projects-schema-unavailable` en lugar de descargar todos los proyectos como alternativa.
-
-Orden previsto: aplicar esa migración → publicar backend `dev` revisado → publicar frontend `dev` con su referencia de contrato. La publicación no está ejecutada por esta entrega; main/producción requieren decisión expresa del propietario. Después, comprobar Proyectos con su cuenta y el aislamiento entre dos cuentas propias. Copiar no reemplaza el borrador activo ni su puntero. Renombrar/borrar conservan la versión exacta y `ABORTED`/409.
-
-### Procedimiento original (histórico)
-
-1. Revisar esquema/historial Supabase y respaldar datos existentes. No repetir migración inicial sobre una base ya migrada.
-2. Autorizar/aplicar pendientes en orden: 20260928000000_initial_schema.sql y 20261012000000_project_transactions.sql. Segunda: grants, índice snapshot, timestamp monotónico y RPC; notifica recarga PostgREST.
-3. Publicar commits elegidos de ambos repositorios. Conservar CORS/CSP/variables existentes; no introducir service_role.
-4. Dos cuentas propias: CRUD e ID de A inaccesible a B (404). Dos pestañas: segundo guardado 409 y borrador conservado.
-5. Recargar: secuencia/ventana/comparación restauradas, propiedades recalculadas en Worker. Sin red: cálculo/CSV locales, guardado con error explícito.
-
-No se promete disponibilidad remota, secuencias offline ni sincronización automática.
-
-Lectura pública expresamente autorizada el 12 oct, 18:20 UTC: las cinco tablas previstas continúan devolviendo 404/PGRST205. Google/correo y registro habilitados; confirmación requerida. No se verificó SMTP, sesión real ni configuración privada. [Resultado y alcance](supabase-public-status.md). No se aplicaron migraciones.
+Referencias: [RLS en Supabase](https://supabase.com/docs/guides/database/postgres/row-level-security), [funciones RPC de PostgREST](https://docs.postgrest.org/en/stable/references/api/functions.html) y [errores de PostgREST](https://docs.postgrest.org/en/stable/references/errors.html).
