@@ -8,5 +8,5 @@ protoc-gen-py==0.6.0
 protoc-gen-connectrpc==0.13.0
 hypercorn==0.18.0
 # Static analysis and coverage gate (configuration in ruff.toml and .coveragerc; never add pyproject.toml).
-ruff==0.17.4
+ruff==0.17.5
 coverage==7.16.2
